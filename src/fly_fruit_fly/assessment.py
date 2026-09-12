@@ -26,8 +26,18 @@ def validate(report):
     return episodes
 
 
+def controller_config(report):
+    """Normalize execution metadata so legacy reports remain comparable."""
+    mode = report.get("control_mode", "full")
+    repeat = report.get("action_repeat", 1)
+    if not isinstance(mode, str) or type(repeat) is not int or repeat <= 0:
+        raise ValueError("Invalid controller configuration")
+    return {"control_mode": mode, "action_repeat": repeat}
+
+
 def assess(report, baseline=None):
     episodes = validate(report)
+    config = controller_config(report)
     # Fixed, published task-specific criteria. Never tune these after seeing
     # results merely to make a candidate pass.
     passed = [e["completed_reference"] and e["duration_s"] >= 0.59 and
@@ -37,6 +47,7 @@ def assess(report, baseline=None):
         "task_gate_passed": len(episodes) >= 10 and rate >= 0.9,
         "criteria": {"minimum_episodes": 10, "minimum_pass_rate": 0.9,
                      "minimum_duration_s": 0.59, "maximum_mean_error_cm": 0.1},
+        "controller_config": config,
         "episodes": len(episodes), "passing_episodes": sum(passed),
         "pass_rate": rate,
         "mean_duration_s": mean(e["duration_s"] for e in episodes),
@@ -50,6 +61,8 @@ def assess(report, baseline=None):
             raise ValueError("Comparison requires exactly matching evaluation seeds")
         if report.get("task") != baseline.get("task"):
             raise ValueError("Comparison requires matching task configurations")
+        if config != controller_config(baseline):
+            raise ValueError("Comparison requires matching controller configurations")
         result["paired_mean_delta"] = {
             key: mean(e[key] - base[e["seed"]][key] for e in episodes)
             for key in ("duration_s", "return", "mean_tracking_error_cm")
