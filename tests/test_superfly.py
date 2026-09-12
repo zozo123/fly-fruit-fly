@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 
 from fly_fruit_fly.connectome import (
@@ -7,6 +8,7 @@ from fly_fruit_fly.connectome import (
     load_graph,
     save_graph,
 )
+from fly_fruit_fly.curriculum import dagger_betas
 from fly_fruit_fly.superfly import (
     SuperFlyPolicy,
     _compute_gae,
@@ -77,6 +79,18 @@ def test_canonical_action_matches_actuator_endpoints_and_midpoint():
     np.testing.assert_allclose(canonical_to_native(np.full(12, 1), low, high), high)
     np.testing.assert_allclose(canonical_to_native(np.zeros(12), low, high), (low + high) / 2)
     np.testing.assert_allclose(canonical_to_native(np.full(12, 9), low, high), high)
+
+
+def test_dagger_schedule_anneals_teacher_control_to_student():
+    assert dagger_betas(0) == []
+    assert dagger_betas(1, 0.7, 0.0) == [0.7]
+    betas = dagger_betas(3, 0.8, 0.0)
+    np.testing.assert_allclose(betas, [0.8, 0.4, 0.0])
+    assert all(a >= b for a, b in zip(betas, betas[1:]))
+    with pytest.raises(ValueError):
+        dagger_betas(-1)
+    with pytest.raises(ValueError):
+        dagger_betas(2, 1.1, 0.0)
 
 
 def test_distillation_learns_a_simple_teacher_mapping():
