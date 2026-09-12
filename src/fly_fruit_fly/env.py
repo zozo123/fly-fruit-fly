@@ -4,7 +4,7 @@ import gymnasium as gym
 import numpy as np
 
 
-CONTROL_MODES = ("full", "frequency")
+CONTROL_MODES = ("full", "wings", "frequency")
 
 
 def flatten(observation):
@@ -61,18 +61,22 @@ class FlightEnv(gym.Env):
         self._full_action_low = np.asarray(spec.minimum, dtype=np.float32)
         self._full_action_high = np.asarray(spec.maximum, dtype=np.float32)
         self._action_names = tuple(spec.name.split("\t")) if spec.name else ()
+        self._wing_action_indices = tuple(
+            int(i) for i in self._env.task._wing_inds_action
+        )
         self._user_action_idx = int(self._env.task._user_idx_action)
+        self._flight_action_indices = self._wing_action_indices + (self._user_action_idx,)
+
         if control_mode == "full":
-            self.action_space = gym.spaces.Box(
-                self._full_action_low, self._full_action_high, dtype=np.float32,
-            )
+            low, high = self._full_action_low, self._full_action_high
+        elif control_mode == "wings":
+            low = self._full_action_low[list(self._flight_action_indices)]
+            high = self._full_action_high[list(self._flight_action_indices)]
         else:
-            # Learn only the WBPG frequency command in [-1, 1]. Wing residuals
-            # remain exactly zero, reducing the policy action space to 1-D.
-            self.action_space = gym.spaces.Box(
-                np.array([-1.0], dtype=np.float32),
-                np.array([1.0], dtype=np.float32), dtype=np.float32,
-            )
+            low = np.array([-1.0], dtype=np.float32)
+            high = np.array([1.0], dtype=np.float32)
+        self.action_space = gym.spaces.Box(low, high, dtype=np.float32)
+
         obs = flatten(self._env.reset().observation)
         self.observation_space = gym.spaces.Box(
             -np.inf, np.inf, shape=obs.shape, dtype=np.float32,
@@ -100,10 +104,14 @@ class FlightEnv(gym.Env):
         action = np.asarray(action, dtype=np.float32)
         if action.shape != self.action_space.shape or not np.isfinite(action).all():
             raise ValueError("Action must have the expected shape and finite values")
+        clipped = np.clip(action, self.action_space.low, self.action_space.high)
         if self.control_mode == "full":
-            return np.clip(action, self._full_action_low, self._full_action_high).copy()
+            return clipped.copy()
         full_action = np.zeros_like(self._full_action_low)
-        full_action[self._user_action_idx] = np.clip(action[0], -1.0, 1.0)
+        if self.control_mode == "wings":
+            full_action[list(self._flight_action_indices)] = clipped
+        else:
+            full_action[self._user_action_idx] = clipped[0]
         return full_action
 
     def step(self, action):
