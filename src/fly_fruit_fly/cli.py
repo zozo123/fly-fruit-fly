@@ -24,12 +24,16 @@ def probability(value):
     return value
 
 
-def checkpoint_control_mode(checkpoint):
-    """Read controller shape metadata, treating legacy checkpoints as full control."""
+def checkpoint_config(checkpoint):
+    """Read controller metadata, treating old checkpoints as full-rate/full control."""
     training = checkpoint / "training.json"
     if not training.is_file():
-        return "full"
-    return json.loads(training.read_text()).get("control_mode", "full")
+        return {"control_mode": "full", "action_repeat": 1}
+    data = json.loads(training.read_text())
+    return {
+        "control_mode": data.get("control_mode", "full"),
+        "action_repeat": data.get("action_repeat", 1),
+    }
 
 
 def train(args):
@@ -47,15 +51,17 @@ def train(args):
         for filename in ("policy.zip", "normalize.pkl"):
             if not (args.resume / filename).is_file():
                 raise FileNotFoundError(f"Missing resume file: {args.resume / filename}")
-        previous_mode = checkpoint_control_mode(args.resume)
-        if args.control_mode != previous_mode:
+        previous = checkpoint_config(args.resume)
+        requested = {"control_mode": args.control_mode, "action_repeat": args.action_repeat}
+        if requested != previous:
             raise ValueError(
-                f"Cannot resume {previous_mode!r} controller as {args.control_mode!r}; "
-                "action spaces differ"
+                f"Cannot resume controller config {previous!r} as {requested!r}; "
+                "action space or policy timestep differs"
             )
     args.output.mkdir(parents=True, exist_ok=True)
     env = DummyVecEnv([
-        lambda: Monitor(FlightEnv(args.seed, control_mode=args.control_mode))
+        lambda: Monitor(FlightEnv(args.seed, control_mode=args.control_mode,
+                                  action_repeat=args.action_repeat))
     ])
     try:
         if args.resume:
@@ -90,6 +96,8 @@ def train(args):
             "seed": args.seed, "requested_steps": args.steps,
             "actual_steps": model.num_timesteps, "algorithm": "PPO",
             "connectome": False, "control_mode": args.control_mode,
+            "action_repeat": args.action_repeat,
+            "policy_interval_s": 0.0002 * args.action_repeat,
             "starting_steps": starting_steps,
             "additional_steps": model.num_timesteps - starting_steps,
             "resumed_from": str(args.resume) if args.resume else None,
@@ -109,17 +117,25 @@ def evaluate(args):
         raise ValueError("Output directory must be empty; choose a new evaluation directory")
     args.output.mkdir(parents=True, exist_ok=True)
     control_mode = args.control_mode
+    action_repeat = args.action_repeat
     if args.checkpoint:
-        saved_mode = checkpoint_control_mode(args.checkpoint)
+        saved = checkpoint_config(args.checkpoint)
         if control_mode is None:
-            control_mode = saved_mode
-        elif control_mode != saved_mode:
+            control_mode = saved["control_mode"]
+        elif control_mode != saved["control_mode"]:
             raise ValueError(
-                f"Checkpoint uses {saved_mode!r} control, not {control_mode!r}"
+                f"Checkpoint uses {saved['control_mode']!r} control, not {control_mode!r}"
+            )
+        if action_repeat is None:
+            action_repeat = saved["action_repeat"]
+        elif action_repeat != saved["action_repeat"]:
+            raise ValueError(
+                f"Checkpoint uses action_repeat={saved['action_repeat']}, not {action_repeat}"
             )
     control_mode = control_mode or "full"
+    action_repeat = action_repeat or 1
     env = FlightEnv(render_mode="rgb_array" if args.video else None,
-                    control_mode=control_mode)
+                    control_mode=control_mode, action_repeat=action_repeat)
     model = normalizer = writer = trace = None
     episodes = []
     capture_stride = realized_slowdown = None
@@ -135,18 +151,23 @@ def evaluate(args):
         trace = (args.output / "trajectory.csv").open("w", newline="")
         trace_writer = csv.DictWriter(trace, fieldnames=[
             "seed", "step", "time_s", "tracking_error_cm", "height_cm", "reward",
+            "inner_control_steps", "tracking_error_sum_cm",
         ])
         trace_writer.writeheader()
         if args.video:
+            # Rendering happens after policy steps, not inner Flybody ticks.
             capture_stride, realized_slowdown = video_capture_stride(
-                env.dt, fps=env.metadata["render_fps"], slowdown=args.video_slowdown
+                env.agent_dt, fps=env.metadata["render_fps"], slowdown=args.video_slowdown
             )
             writer = imageio.get_writer(
                 args.output / "flight.mp4", fps=env.metadata["render_fps"]
             )
         for episode in range(args.episodes):
             obs, info = env.reset(seed=args.seed + episode)
-            total_reward, errors, steps = 0., [], 0
+            total_reward = 0.0
+            error_sum = 0.0
+            policy_steps = 0
+            control_steps = 0
             terminated = truncated = False
             if writer and episode == 0:
                 writer.append_data(env.render())
@@ -161,26 +182,30 @@ def evaluate(args):
                 if not np.isfinite(obs).all() or not np.isfinite(reward):
                     raise RuntimeError("Non-finite simulation output")
                 total_reward += reward
-                errors.append(info["tracking_error_cm"])
-                steps += 1
-                trace_writer.writerow({"seed": args.seed + episode, "step": steps,
+                error_sum += info["tracking_error_sum_cm"]
+                control_steps += info["inner_control_steps"]
+                policy_steps += 1
+                trace_writer.writerow({"seed": args.seed + episode, "step": policy_steps,
                                        **info, "reward": reward})
                 if (writer and episode == 0 and
-                        (steps % capture_stride == 0 or terminated or truncated)):
+                        (policy_steps % capture_stride == 0 or terminated or truncated)):
                     writer.append_data(env.render())
             episodes.append({
-                "seed": args.seed + episode, "steps": steps,
+                "seed": args.seed + episode, "steps": policy_steps,
+                "control_steps": control_steps,
                 "return": total_reward, "duration_s": info["time_s"],
-                "mean_tracking_error_cm": float(np.mean(errors)),
+                "mean_tracking_error_cm": error_sum / control_steps,
                 "final_height_cm": info["height_cm"],
                 "failed": terminated, "completed_reference": truncated,
             })
         report = {
-            "schema_version": 3,
+            "schema_version": 4,
             "task": {"name": "flybody_straight_flight", "speed_cm_s": 20,
                      "initial_height_cm": 1, "reference_duration_s": 0.6},
             "controller": "ppo" if model else "untrained_wingbeat",
             "control_mode": control_mode,
+            "action_repeat": action_repeat,
+            "policy_interval_s": env.agent_dt,
             "checkpoint": str(args.checkpoint) if args.checkpoint else None,
             "video_slowdown": realized_slowdown if args.video else None,
             "video_capture_stride": capture_stride if args.video else None,
@@ -222,7 +247,9 @@ def main():
     training.add_argument("--resume", type=Path,
                           help="Directory containing policy.zip and matching normalize.pkl")
     training.add_argument("--control-mode", choices=CONTROL_MODES, default="full",
-                          help="full learns all residual actions; frequency learns only WBPG frequency")
+                          help="full learns six wing residuals plus WBPG frequency; frequency learns only frequency")
+    training.add_argument("--action-repeat", type=positive, default=1,
+                          help="Hold each policy action for this many 0.2 ms Flybody control ticks")
     training.add_argument("--checkpoint-every", type=positive, default=10_240)
     training.add_argument("--gamma", type=probability,
                           help="Explicit discount override; otherwise preserve PPO/checkpoint default")
@@ -234,6 +261,8 @@ def main():
     evaluation.add_argument("--checkpoint", type=Path)
     evaluation.add_argument("--control-mode", choices=CONTROL_MODES,
                             help="Defaults to checkpoint metadata, or full for untrained baseline")
+    evaluation.add_argument("--action-repeat", type=positive,
+                            help="Defaults to checkpoint metadata, or 1 for untrained baseline")
     evaluation.add_argument("--episodes", type=positive, default=5)
     evaluation.add_argument("--seed", type=int, default=10_000)
     evaluation.add_argument("--video", action="store_true")
