@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fly-fruit-fly"
 version = "0.1.0"
-description = "A minimal, measurable flight-learning baseline for Flybody"
+description = "A measurable flight-learning and expert-baseline harness for Flybody"
 requires-python = ">=3.11,<3.13"
 dependencies = [
   "flybody @ git+https://github.com/TuragaLab/flybody.git@d015e9bfe441bd90ae431bac24c55cb74bdbce26",
@@ -17,6 +17,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9"]
+expert = [
+  "tensorflow-cpu==2.15.1",
+  "tensorflow-probability==0.23.0",
+]
 
 [project.scripts]
 fly = "fly_fruit_fly.cli:main"
