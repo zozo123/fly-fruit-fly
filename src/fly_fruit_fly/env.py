@@ -34,17 +34,21 @@ def video_capture_stride(control_timestep_s, fps=50, slowdown=10):
 class FlightEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 50}
 
-    def __init__(self, seed=0, render_mode=None, control_mode="full"):
+    def __init__(self, seed=0, render_mode=None, control_mode="full", action_repeat=1):
         from flybody.fly_envs import flight_imitation
         from flybody.tasks.synthetic_trajectories import constant_speed_trajectory
 
         if control_mode not in CONTROL_MODES:
             raise ValueError(f"control_mode must be one of {CONTROL_MODES}")
+        if not isinstance(action_repeat, int) or action_repeat <= 0:
+            raise ValueError("action_repeat must be a positive integer")
         self.control_mode = control_mode
+        self.action_repeat = action_repeat
         self.render_mode = render_mode
         self._rng = np.random.RandomState(seed)
         self._env = flight_imitation(random_state=self._rng)
         self.dt = self._env.control_timestep()
+        self.agent_dt = self.dt * self.action_repeat
         # Upstream's default synthetic reference lasts only 40 ms. Supply the
         # full 0.6 s task plus lookahead, through its documented loader hook.
         qpos, qvel = constant_speed_trajectory(
@@ -56,6 +60,7 @@ class FlightEnv(gym.Env):
         spec = self._env.action_spec()
         self._full_action_low = np.asarray(spec.minimum, dtype=np.float32)
         self._full_action_high = np.asarray(spec.maximum, dtype=np.float32)
+        self._action_names = tuple(spec.name.split("\t")) if spec.name else ()
         self._user_action_idx = int(self._env.task._user_idx_action)
         if control_mode == "full":
             self.action_space = gym.spaces.Box(
@@ -104,12 +109,24 @@ class FlightEnv(gym.Env):
     def step(self, action):
         if self._ended:
             raise RuntimeError("Call reset() before starting another episode")
-        # Flybody adds wingbeat controls in place: always pass a fresh full action.
-        ts = self._env.step(self._expand_action(action))
-        terminated, truncated = end_flags(ts)
+        total_reward = 0.0
+        ts = None
+        terminated = truncated = False
+        inner_steps = 0
+        for _ in range(self.action_repeat):
+            # Flybody adds wingbeat controls in place, so expand a fresh full
+            # action each 0.2 ms control tick even when the policy action is held.
+            ts = self._env.step(self._expand_action(action))
+            total_reward += float(ts.reward or 0)
+            inner_steps += 1
+            terminated, truncated = end_flags(ts)
+            if terminated or truncated:
+                break
         self._ended = terminated or truncated
-        return (flatten(ts.observation), float(ts.reward or 0),
-                terminated, truncated, self._info(ts))
+        info = self._info(ts)
+        info["inner_control_steps"] = inner_steps
+        return (flatten(ts.observation), total_reward,
+                terminated, truncated, info)
 
     def render(self):
         return self._env.physics.render(height=480, width=640, camera_id=1)
