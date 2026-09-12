@@ -46,11 +46,15 @@ def test_simulator_contract_and_reproducibility():
     try:
         check_env(env, warn=True, skip_render_check=True)
         assert env.dt == pytest.approx(0.0002)
-        assert len(env._action_names) == env.action_space.shape[0]
+        # The Nature flight controller and released expert use the native
+        # 12-dimensional action interface at every 0.2 ms control tick.
+        assert env.action_space.shape == (12,)
+        assert len(env._action_names) == 12
         assert env._action_names[env._user_action_idx] == "user_0"
         assert len(env._wing_action_indices) == 6
         assert {env._action_names[i] for i in env._wing_action_indices} == EXPECTED_WING_ACTIONS
         first, _ = env.reset(seed=42)
+        assert set(env.raw_observation) == set(env._env.observation_spec())
         action = np.zeros(env.action_space.shape, dtype=np.float32)
         obs, reward, _, _, info = env.step(action)
         np.testing.assert_array_equal(action, 0)
