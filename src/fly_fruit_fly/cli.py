@@ -78,8 +78,6 @@ def train(args):
                         n_steps=512, batch_size=64, n_epochs=5,
                         policy_kwargs={"net_arch": [64, 64]}, learning_rate=3e-4)
         starting_steps = model.num_timesteps
-        # Changing credit-assignment horizon is explicit and recorded. Defaults
-        # preserve existing checkpoint hyperparameters when resuming.
         if args.gamma is not None:
             model.gamma = args.gamma
             model.rollout_buffer.gamma = args.gamma
@@ -113,12 +111,19 @@ def evaluate(args):
     import imageio.v2 as imageio
     from .env import FlightEnv
 
+    if args.checkpoint and args.expert:
+        raise ValueError("Choose either --checkpoint or --expert, not both")
     if args.output.exists() and any(args.output.iterdir()):
         raise ValueError("Output directory must be empty; choose a new evaluation directory")
     args.output.mkdir(parents=True, exist_ok=True)
+
     control_mode = args.control_mode
     action_repeat = args.action_repeat
-    if args.checkpoint:
+    if args.expert:
+        if control_mode not in (None, "full") or action_repeat not in (None, 1):
+            raise ValueError("The released expert requires full 12-D control at native rate")
+        control_mode, action_repeat = "full", 1
+    elif args.checkpoint:
         saved = checkpoint_config(args.checkpoint)
         if control_mode is None:
             control_mode = saved["control_mode"]
@@ -134,13 +139,21 @@ def evaluate(args):
             )
     control_mode = control_mode or "full"
     action_repeat = action_repeat or 1
+
     env = FlightEnv(render_mode="rgb_array" if args.video else None,
                     control_mode=control_mode, action_repeat=action_repeat)
-    model = normalizer = writer = trace = None
+    model = normalizer = expert_policy = writer = trace = None
     episodes = []
     capture_stride = realized_slowdown = None
     try:
-        if args.checkpoint:
+        if args.expert:
+            from .expert import OfficialFlightPolicy
+            expert_policy = OfficialFlightPolicy.from_cache(args.expert_cache)
+            if env.action_space.shape != (12,):
+                raise RuntimeError(
+                    f"Pinned Flybody full action spec changed: {env.action_space.shape}"
+                )
+        elif args.checkpoint:
             from stable_baselines3 import PPO
             from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
             model = PPO.load(args.checkpoint / "policy.zip", device="cpu")
@@ -148,6 +161,7 @@ def evaluate(args):
                                           DummyVecEnv([lambda: env]))
             normalizer.training = False
             normalizer.norm_reward = False
+
         trace = (args.output / "trajectory.csv").open("w", newline="")
         trace_writer = csv.DictWriter(trace, fieldnames=[
             "seed", "step", "time_s", "tracking_error_cm", "height_cm", "reward",
@@ -155,13 +169,13 @@ def evaluate(args):
         ])
         trace_writer.writeheader()
         if args.video:
-            # Rendering happens after policy steps, not inner Flybody ticks.
             capture_stride, realized_slowdown = video_capture_stride(
                 env.agent_dt, fps=env.metadata["render_fps"], slowdown=args.video_slowdown
             )
             writer = imageio.get_writer(
                 args.output / "flight.mp4", fps=env.metadata["render_fps"]
             )
+
         for episode in range(args.episodes):
             obs, info = env.reset(seed=args.seed + episode)
             total_reward = 0.0
@@ -172,12 +186,14 @@ def evaluate(args):
             if writer and episode == 0:
                 writer.append_data(env.render())
             while not (terminated or truncated):
-                if model is None:
-                    # Zero residual/frequency command still invokes upstream WBPG.
-                    action = np.zeros(env.action_space.shape, dtype=np.float32)
-                else:
+                if expert_policy is not None:
+                    action = expert_policy.predict(env.raw_observation)
+                elif model is not None:
                     action, _ = model.predict(normalizer.normalize_obs(obs.copy()),
                                               deterministic=True)
+                else:
+                    # Zero residuals still invoke Flybody's upstream wingbeat generator.
+                    action = np.zeros(env.action_space.shape, dtype=np.float32)
                 obs, reward, terminated, truncated, info = env.step(action)
                 if not np.isfinite(obs).all() or not np.isfinite(reward):
                     raise RuntimeError("Non-finite simulation output")
@@ -198,21 +214,40 @@ def evaluate(args):
                 "final_height_cm": info["height_cm"],
                 "failed": terminated, "completed_reference": truncated,
             })
+
+        controller = (
+            "official_flybody_expert" if expert_policy is not None
+            else "ppo" if model is not None
+            else "untrained_wingbeat"
+        )
         report = {
-            "schema_version": 4,
+            "schema_version": 5,
             "task": {"name": "flybody_straight_flight", "speed_cm_s": 20,
                      "initial_height_cm": 1, "reference_duration_s": 0.6},
-            "controller": "ppo" if model else "untrained_wingbeat",
+            "controller": controller,
             "control_mode": control_mode,
             "action_repeat": action_repeat,
             "policy_interval_s": env.agent_dt,
             "checkpoint": str(args.checkpoint) if args.checkpoint else None,
+            "expert_source": (
+                "https://janelia.figshare.com/ndownloader/files/44815195"
+                if expert_policy is not None else None
+            ),
+            "expert_archive_sha256": (
+                "2d9937c9af2baafad1690c1b318791bde417b4d26dd96d4385ab6723d5d58582"
+                if expert_policy is not None else None
+            ),
             "video_slowdown": realized_slowdown if args.video else None,
             "video_capture_stride": capture_stride if args.video else None,
             "episodes": episodes,
             "completion_rate": float(np.mean([e["completed_reference"] for e in episodes])),
             "mean_return": float(np.mean([e["return"] for e in episodes])),
-            "note": "Completion of a 0.6 s synthetic reference is not proof of general flight.",
+            "note": (
+                "The official expert is an upstream released controller, not a policy trained "
+                "by this repository. Completion of this synthetic task is not proof of general flight."
+                if expert_policy is not None else
+                "Completion of a 0.6 s synthetic reference is not proof of general flight."
+            ),
         }
         (args.output / "metrics.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, indent=2))
@@ -240,16 +275,15 @@ def assessment(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    training = sub.add_parser("train", help="Learn wingbeat corrections using PPO")
+    training = sub.add_parser("train", help="Learn flight controls using PPO")
     training.add_argument("--steps", type=positive, default=1_000_000)
     training.add_argument("--seed", type=int, default=0)
     training.add_argument("--threads", type=positive, default=2)
     training.add_argument("--resume", type=Path,
                           help="Directory containing policy.zip and matching normalize.pkl")
     training.add_argument("--control-mode", choices=CONTROL_MODES, default="full",
-                          help=("full exposes every upstream actuator; wings exposes the six "
-                                "wing residuals plus WBPG frequency; frequency exposes only "
-                                "WBPG frequency"))
+                          help=("full exposes all 12 upstream actions; wings exposes six wing "
+                                "residuals plus WPG frequency; frequency exposes only frequency"))
     training.add_argument("--action-repeat", type=positive, default=1,
                           help="Hold each policy action for this many 0.2 ms Flybody control ticks")
     training.add_argument("--checkpoint-every", type=positive, default=10_240)
@@ -259,12 +293,22 @@ def main():
                           help="Explicit advantage-estimation horizon override")
     training.add_argument("--output", type=Path, default=Path("runs/train"))
     training.set_defaults(func=train)
-    evaluation = sub.add_parser("evaluate", help="Evaluate PPO or the untrained baseline")
+
+    evaluation = sub.add_parser(
+        "evaluate", help="Evaluate PPO, the released Flybody expert, or an untrained baseline"
+    )
     evaluation.add_argument("--checkpoint", type=Path)
+    evaluation.add_argument("--expert", action="store_true",
+                            help="Use the official released Flybody flight SavedModel")
+    evaluation.add_argument(
+        "--expert-cache", type=Path,
+        default=Path.home() / ".cache" / "fly-fruit-fly",
+        help="Cache directory for the verified upstream policy archive",
+    )
     evaluation.add_argument("--control-mode", choices=CONTROL_MODES,
-                            help="Defaults to checkpoint metadata, or full for untrained baseline")
+                            help="Defaults to checkpoint metadata, or full for baseline/expert")
     evaluation.add_argument("--action-repeat", type=positive,
-                            help="Defaults to checkpoint metadata, or 1 for untrained baseline")
+                            help="Defaults to checkpoint metadata, or 1 for baseline/expert")
     evaluation.add_argument("--episodes", type=positive, default=5)
     evaluation.add_argument("--seed", type=int, default=10_000)
     evaluation.add_argument("--video", action="store_true")
@@ -272,6 +316,7 @@ def main():
                             help="Requested playback slowdown relative to simulator time")
     evaluation.add_argument("--output", type=Path, default=Path("runs/evaluation"))
     evaluation.set_defaults(func=evaluate)
+
     gate = sub.add_parser("assess", help="Evaluate recorded metrics against fixed flight criteria")
     gate.add_argument("metrics", type=Path)
     gate.add_argument("--baseline", type=Path)
