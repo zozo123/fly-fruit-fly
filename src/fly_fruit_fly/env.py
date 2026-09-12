@@ -110,7 +110,9 @@ class FlightEnv(gym.Env):
         if self._ended:
             raise RuntimeError("Call reset() before starting another episode")
         total_reward = 0.0
+        tracking_error_sum = 0.0
         ts = None
+        info = None
         terminated = truncated = False
         inner_steps = 0
         for _ in range(self.action_repeat):
@@ -119,12 +121,14 @@ class FlightEnv(gym.Env):
             ts = self._env.step(self._expand_action(action))
             total_reward += float(ts.reward or 0)
             inner_steps += 1
+            info = self._info(ts)
+            tracking_error_sum += info["tracking_error_cm"]
             terminated, truncated = end_flags(ts)
             if terminated or truncated:
                 break
         self._ended = terminated or truncated
-        info = self._info(ts)
         info["inner_control_steps"] = inner_steps
+        info["tracking_error_sum_cm"] = tracking_error_sum
         return (flatten(ts.observation), total_reward,
                 terminated, truncated, info)
 
