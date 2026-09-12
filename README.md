@@ -1,114 +1,70 @@
 # fly-fruit-fly
 
-**A real MuJoCo flight-learning experiment. Stable flight is not achieved yet.**
+**Teach a physics-based fruit fly to fly. Current status: the experiment is real; stable flight is not solved yet.**
 
-A small PPO controller learns corrections to [Flybody](https://github.com/TuragaLab/flybody)'s
-wingbeat generator. This repository contains the code, the first trained checkpoint,
-raw measurements, and actual simulator videos—including the failures.
-It does **not** contain a fruit-fly connectome or a reconstructed biological brain.
+This repository wraps [Flybody](https://github.com/TuragaLab/flybody)'s MuJoCo fruit fly and wingbeat generator with a small PPO controller. It contains executable code, trained checkpoints, raw metrics, simulator videos, failure evidence, and explicit pass/fail criteria.
 
-[![Animated real simulation: both controllers fail](media/preview.gif)](media/comparison.mp4)
+It does **not** claim to contain a reconstructed fruit-fly brain or a working connectome controller.
 
-**[Watch/download the comparison movie](media/comparison.mp4)** ·
-[Unedited baseline](media/baseline.mp4) · [Unedited PPO attempt](media/ppo-8192.mp4)
+[![Real simulator comparison: both controllers fail](media/preview.gif)](media/comparison.mp4)
 
-The movie shows evaluation seed **10000**, selected as the first episode rather
-than the best episode. Orange is the simulated fly; the translucent ghost is the
-target. Motion is approximately **10× slower than simulated time**. Each panel
-holds its last frame after termination, explicitly labeled; the hold is not
-additional flight. There is no generated flight footage.
+**[Play the comparison MP4](media/comparison.mp4)** · [Untrained baseline](media/baseline.mp4) · [8,192-step PPO attempt](media/ppo-8192.mp4)
 
-The animation plays directly in the README. Click it for the full MP4; if GitHub
-shows a file page instead of a player, choose **View raw / Download**. Mobile apps
-may pause GIF autoplay; the MP4 link remains available.
+The video is real Flybody/MuJoCo output, approximately **10× slower than simulated time**. Orange is the simulated fly; the translucent fly is the target trajectory. The first evaluation seed is shown, not a cherry-picked success. Each panel freezes after termination and labels the failure; frozen frames are not extra flight time.
 
-## Sustained flight: the next model milestone
+## Result so far: longer survival, worse tracking
 
-The **Sustained flight experiment** workflow continues the recorded checkpoint for
-65,536 additional steps, then evaluates ten new, matched initial wingbeat phases.
-It uses explicit `gamma=0.999` and `gae_lambda=0.99` overrides to test longer-horizon
-credit assignment. These are experimental settings, not demonstrated improvements.
-At the 0.2 ms control interval, `gamma=0.999` gives an approximate 0.2-second
-discount horizon, compared with ~0.02 seconds for `0.99`.
+The sustained experiment continued the original checkpoint from **8,192 to 73,728 total PPO steps**, then evaluated the learned policy and untrained wingbeat baseline on the same ten held-out initial wingbeat phases.
 
-The task gate requires **at least ten episodes**, with **90%** completing at least
-**0.59 seconds** and each passing episode averaging at most **0.1 cm** position
-error. This is a declared engineering milestone for the straight-flight task,
-not a claim of takeoff, maneuverability, robustness, or biological fidelity.
+[Actions run 34712024080](https://github.com/zozo123/fly-fruit-fly/actions/runs/34712024080) completed successfully as an experiment, but the **flight gate failed 0/10**.
 
-```bash
-fly train --resume results/2026-09-12-smoke --steps 65536 --gamma 0.999 --gae-lambda 0.99 --output runs/candidate
-fly evaluate --checkpoint runs/candidate --episodes 10 --seed 20000 --video --output runs/candidate-eval
-fly assess runs/candidate-eval/metrics.json --require-pass
-```
+| Measurement | Untrained wingbeat | PPO, 73,728 total steps | Delta |
+| --- | ---: | ---: | ---: |
+| Passed 0.6 s straight-flight gate | 0 / 10 | 0 / 10 | — |
+| Mean survival | 52.86 ms | 72.44 ms | +19.58 ms |
+| Mean return | 95.49 | 108.70 | +13.21 |
+| Mean episode tracking error¹ | 0.291 cm | 0.394 cm | **+0.104 cm worse** |
 
-`assess --require-pass` exits **2** when the gate fails. Without that flag, it
-reports the result without failing the command. A green experiment workflow means
-the experiment ran; its `assessment.json` states whether flight passed. Models
-are never silently promoted on reward alone. Each evaluation now also saves
-`trajectory.csv` for time-aligned error analysis. Existing output directories are
-protected from accidental overwrite. Assessment rejects malformed metrics,
-non-finite values, duplicate seeds, and mismatched comparison configurations.
+¹ Mean of each episode's mean target-position error over its own lifetime. Because episodes have different durations, this is descriptive rather than a matched-time statistical comparison.
 
-## What we verified
+**Interpretation:** the old controller learned behavior that survived somewhat longer and accumulated more reward, but it moved farther from the target and every episode crashed after roughly 60–83 ms—far short of the 0.6 s goal. Reward alone is therefore not a promotion criterion.
 
-[Run 34698143882](https://github.com/zozo123/fly-fruit-fly/actions/runs/34698143882)
-completed on **2026-09-12**, using source commit
-[`54b60a0`](https://github.com/zozo123/fly-fruit-fly/tree/54b60a0f05d3b7821365897a6e8410080b2c6bf2).
-Five simulator tests passed. The run trained for 8,192 steps, saved the model and
-normalization statistics, reloaded them, evaluated three held-out initial wingbeat
-phases, and produced both videos. **Passing CI confirms that pipeline; it does not
-mean the fly learned to fly.**
+The full evidence is committed under [`results/2026-09-12-sustained/`](results/2026-09-12-sustained/): [baseline](results/2026-09-12-sustained/baseline.json), [PPO](results/2026-09-12-sustained/ppo.json), [assessment](results/2026-09-12-sustained/assessment.json), [training config](results/2026-09-12-sustained/training.json), [environment](results/2026-09-12-sustained/environment.txt), and [provenance](results/2026-09-12-sustained/provenance.json). The provenance records source commit `3eb7fc5`, Actions artifact `10303364175`, and GitHub's artifact SHA-256 digest.
 
-| Measurement | Untrained wingbeat | PPO after 8,192 steps |
-| --- | ---: | ---: |
-| Completed reference | 0 / 3 | 0 / 3 |
-| Failed episodes | 3 / 3 | 3 / 3 |
-| Mean episode duration | 53.27 ms | 62.07 ms |
-| Mean episode return | 97.11 | 106.76 |
-| Mean tracking error¹ | 0.289 cm | 0.388 cm |
-
-¹ Mean of each episode's mean position error, over its own duration. The episodes
-have different lengths; this is not a matched-time error comparison.
-
-**Interpretation:** episodes lasted 16.5% longer and return increased, but average
-tracking error worsened and every attempt failed well before the ~0.6-second goal.
-This is one short training run with one training seed and three evaluation phases.
-It does not establish reliable improvement, successful hovering, takeoff, or general flight.
-
-## Evidence you can inspect
-
-The original results are committed here, so they do not depend on expiring Actions
-artifacts: [baseline JSON](results/2026-09-12-smoke/baseline.json),
-[PPO JSON](results/2026-09-12-smoke/ppo.json),
-[training configuration](results/2026-09-12-smoke/training.json),
-[installed environment](results/2026-09-12-smoke/environment.txt),
-[provenance and file hashes](results/2026-09-12-smoke/provenance.json).
-The original downloaded artifact's SHA-256 matched GitHub's recorded digest before
-these files were extracted. The movies were decoded and inspected.
-
-Check the committed evidence without installing a simulator:
+Verify both the original smoke evidence and sustained result without installing MuJoCo:
 
 ```bash
 python scripts/verify_results.py
 ```
 
-After installing the project, replay the saved controller:
+## The next controller: wings only, slower policy
 
-```bash
-fly evaluate --checkpoint results/2026-09-12-smoke --episodes 3 --video --output runs/replay
+Flybody itself must still run its wingbeat generator and physics at the native **0.2 ms control interval**. PPO does not need to make a brand-new high-level decision every 0.2 ms.
+
+The new controller keeps the inner simulator unchanged but gives PPO a cleaner interface:
+
+```text
+observations
+    │
+    ▼
+  PPO policy ───────── every 2 ms ─────────┐
+    │                                       │
+    ├─ 6 wing residuals                    │ held for 10 inner ticks
+    └─ 1 wingbeat-frequency command         │
+                                            ▼
+                              Flybody WBPG + MuJoCo
+                                   every 0.2 ms
 ```
 
-The checkpoint and its matching statistics are included. Exact numeric replay
-can vary across platforms and dependency versions; the recorded environment is
-provided, and this publication does not claim an independent second training run.
-To reproduce the annotated movie from the raw videos on Linux, install Pillow
-and FFmpeg, then run `python scripts/make_movie.py`.
+`--control-mode wings` exposes exactly the six Flybody wing residual channels plus the documented `user_0` wingbeat-frequency command: **7 policy actions total**. Head/abdomen/non-flight actuator channels are held at zero. `--action-repeat 10` holds each policy decision for ten native Flybody ticks, giving PPO a **2 ms policy interval** while preserving 0.2 ms wingbeat/physics integration.
 
-## Run
+This changes the learning problem from roughly **3,000 PPO decisions per 0.6 s episode to ~300**, while evaluation still accumulates tracking error and reward across every inner 0.2 ms tick. The metric is not made easier by downsampling.
 
-Use Python 3.11 on Linux for the tested CI configuration. Python 3.12 is also
-allowed but not covered by CI. From a checkout of this repository:
+At 2 ms per policy step, `gamma=0.99` has an approximate 0.2 s discount horizon. A 512-step PPO rollout spans about 1.024 s of simulated policy time and can cross episode boundaries. The 1-D `frequency` mode is also available as an ablation; it is not the primary controller.
+
+## Run the current best experiment
+
+Tested CI configuration: Linux, Python 3.11, CPU Torch, headless MuJoCo/EGL.
 
 ```bash
 uv venv --python 3.11
@@ -116,111 +72,91 @@ source .venv/bin/activate
 uv pip install -e '.[dev]'
 export MUJOCO_GL=egl
 
-# Measure the existing wingbeat generator with no learned corrections.
-fly evaluate --episodes 5 --video --output runs/baseline
+# 1. Measure the matched untrained 7-D flight interface.
+fly evaluate \
+  --control-mode wings \
+  --action-repeat 10 \
+  --episodes 10 \
+  --seed 30000 \
+  --output runs/baseline
 
-# Train the small controller. This is a starting budget, not a success guarantee.
-fly train --steps 1000000 --output runs/train
+# 2. Train a fresh controller. Old checkpoints use a different policy interface.
+fly train \
+  --control-mode wings \
+  --action-repeat 10 \
+  --steps 8192 \
+  --gamma 0.99 \
+  --gae-lambda 0.95 \
+  --checkpoint-every 2048 \
+  --output runs/candidate
 
-# Reload policy AND observation statistics; use the same evaluation seeds.
-fly evaluate --checkpoint runs/train --episodes 5 --video --output runs/evaluation
+# 3. Evaluate on exactly the same held-out phases and record a real video.
+fly evaluate \
+  --checkpoint runs/candidate \
+  --episodes 10 \
+  --seed 30000 \
+  --video \
+  --output runs/evaluation
+
+# 4. Apply the fixed engineering gate.
+fly assess \
+  runs/evaluation/metrics.json \
+  --baseline runs/baseline/metrics.json \
+  --require-pass
 ```
 
-`python -m pip install -e '.[dev]'` works instead of `uv pip install` in an
-activated Python environment. For CPU-only Torch, install its CPU wheel first as
-shown in the workflow. On headless Ubuntu, install `libegl1-mesa`,
-`libgl1-mesa-dri`, and `ffmpeg`. On a desktop, omit the EGL setting if the normal
-MuJoCo renderer works. Training itself does not capture video.
+`assess --require-pass` exits **2** when flight fails. Without that flag it records the result without turning a scientifically valid failed experiment into a broken workflow.
 
-## Continue training the saved model
+The same experiment is encoded in [`.github/workflows/policy-rate-flight.yml`](.github/workflows/policy-rate-flight.yml). It uploads all metrics, traces, checkpoints, normalization statistics, environment versions, and the first evaluation video whether the task passes or fails.
+
+## What counts as "learned to fly"
+
+The declared straight-flight gate is deliberately independent of reward:
+
+- at least **10 held-out episodes**;
+- at least **90%** must complete **≥ 0.59 s** of the 0.6 s reference;
+- each passing episode must average **≤ 0.1 cm** target-position error.
+
+This is an engineering milestone for one synthetic straight-flight task. Passing it would **not** prove takeoff, hovering, maneuverability, disturbance robustness, general flight, or biological fidelity.
+
+Candidate/baseline comparison also requires exactly matching evaluation seeds, task configuration, controller mode, and action-repeat value. Malformed/non-finite reports, duplicate seeds, and mismatched comparisons are rejected.
+
+## Model and environment
+
+- Target: ~0.6 s at **20 cm/s**, starting airborne at **1 cm** center-of-mass height.
+- Flybody units are centimeters, grams, and seconds.
+- This project supplies a full 0.6 s synthetic reference; upstream's stock synthetic reference is much shorter.
+- Flybody's wingbeat pattern generator supplies periodic wing motion. PPO learns corrections rather than inventing every wingstroke from scratch.
+- The current PPO is a small two-layer **64×64 MLP** with normalized observations/rewards and CPU inference/training.
+- Crashes are terminal failures. Reaching the time/reference limit is a truncation so PPO can bootstrap correctly.
+- Evaluation emits `metrics.json` and `trajectory.csv`; video is evidence, not the scoring mechanism.
+- Checkpoints are only reusable with their matching `normalize.pkl` and controller configuration.
+
+The original smoke checkpoint and its evidence remain in [`results/2026-09-12-smoke/`](results/2026-09-12-smoke/). That run evaluated three phases and also failed all three; it is retained rather than replaced by the longer run.
+
+## Replaying an existing checkpoint
 
 ```bash
-fly train --resume results/2026-09-12-smoke --steps 100000 --output runs/continued
-fly evaluate --checkpoint runs/continued --episodes 5 --video --output runs/continued-evaluation
+fly evaluate \
+  --checkpoint results/2026-09-12-smoke \
+  --episodes 3 \
+  --video \
+  --output runs/replay
 ```
 
-`--steps` is the **additional** budget when resuming, rounded up to a complete
-rollout. We restore weights, optimizer, step counters, and observation/reward
-normalization. Training starts a fresh seeded episode; this is not a bit-exact
-continuation of simulator or random-number state. Use a new empty output directory
-to preserve the source checkpoint. `training.json` records the starting and added
-step counts. `--checkpoint-every 10240` controls periodic checkpoint frequency.
-Periodic files use SB3's names: `rl_model_N_steps.zip` and
-`rl_model_vecnormalize_N_steps.pkl`. To resume one, copy the matching pair into a
-new directory as `policy.zip` and `normalize.pkl`.
+The legacy checkpoint is interpreted as `control_mode=full, action_repeat=1`. Resuming is allowed only when the action space and policy timestep match the saved controller metadata; changing to the 7-D wing controller requires fresh training.
 
-The integration workflow also resumes training for 512 steps, checks the cumulative
-counter and changed policy weights, verifies normalization counts continue, and
-loads the resumed model for an evaluation episode.
+## Connectome: only after embodied control works
 
-## No local setup: GitHub Actions
+A connectome is a later controlled experiment, not a marketing label for the PPO baseline. Once an embodied flight controller passes a meaningful task, collect observation/action pairs from it and compare a fixed sparse connectome model against both the PPO teacher and a size-matched random reservoir on unseen trajectories and disturbances.
 
-Open [Actions → Flight baseline](https://github.com/zozo123/fly-fruit-fly/actions/workflows/flight.yml).
-Each push runs simulator tests, measures the untrained controller, trains for
-8,192 steps, reloads the saved model, and renders an evaluation. This is a smoke
-budget, not enough to assume convergence. For a longer experiment, choose
-**Run workflow** and enter the training budget. The job has a 60-minute cap;
-checkpoints and normalization statistics are saved every 10,240 steps and
-uploaded even if a later step fails. Runs consume GitHub Actions minutes.
+Wiring alone does not specify synaptic signs, neuron dynamics, sensory encoding, motor decoding, or learning rules. Those assumptions must be explicit and separately tested.
 
-Download the run's `flight-baseline-…` artifact to get:
+## Sources
 
-| File | Purpose |
-| --- | --- |
-| `baseline/metrics.json` | Untrained wingbeat reference score |
-| `baseline/flight.mp4` | First untrained episode, including any crash |
-| `train/policy.zip` | Trained PPO model |
-| `train/normalize.pkl` | Matching observation normalization; keep with model |
-| `train/training.json` | Seed and actual training steps |
-| `evaluation/metrics.json` | Held-out episode scores, durations, errors, failures |
-| `evaluation/flight.mp4` | First evaluation episode, including any crash |
-| `environment.txt` | Exact installed dependency versions |
+Flybody is developed by HHMI Janelia and Google DeepMind and distributed under Apache-2.0. This repository pins upstream commit [`d015e9b`](https://github.com/TuragaLab/flybody/tree/d015e9bfe441bd90ae431bac24c55cb74bdbce26).
 
-Videos show the real simulator at **10× slow motion**. The translucent ghost is
-the target trajectory, not the learned fly. Files are written under `runs/`
-locally; workflow artifacts expire after 14 days, so download runs you want to keep.
-Only load trusted model/normalization files.
-
-## What the experiment means
-
-- Target: approximately 0.6 seconds at **20 cm/s**, **1 cm** initial CoM height.
-  The fly starts airborne at the target velocity; takeoff is not trained.
-- Flybody's units are centimeters, grams, and seconds. Its stock synthetic
-  reference lasts only 40 ms; this project supplies a full-length reference.
-- Physics and aerodynamic forces come from Flybody/MuJoCo. The wingbeat
-  generator supplies a periodic baseline; PPO learns residual actions.
-- Rewards are Flybody's existing position/orientation tracking and leg terms.
-  Crashes terminate episodes; reference/time limits truncate them so PPO can
-  bootstrap correctly.
-- Observations are flattened in stable key order and normalized. The tiny
-  two-layer, 64-unit policy runs on CPU. This PPO path is our baseline, not the
-  upstream paper's DMPO training reproduction.
-- Compare completion rate, mean return, and per-episode tracking error against
-  the untrained baseline on the same held-out seeds. Seeds vary initial wingbeat
-  phase; they do not represent diverse environments. Longer survival alone
-  does not establish accurate flight. Repeat training across seeds before
-  claiming a reliable improvement.
-
-## Connectome: next controlled experiment
-
-Once the flight baseline works, collect observation/action pairs from its
-controller. Fit an input adapter and readout around a fixed, sparse connectome
-network, first by imitation and then optionally by reinforcement learning.
-Compare against the PPO teacher and a size-matched random reservoir on unseen
-trajectories and disturbances. Measure whether the real wiring helps.
-
-Wiring counts alone do not specify synaptic signs, neuron dynamics, sensory
-encoding, or motor decoding. Keep those modeling assumptions explicit. Do not
-download gigabytes of connectome data until the embodied baseline is measured.
-
-## Sources and attribution
-
-Flybody is developed by HHMI Janelia and Google DeepMind and distributed under
-Apache-2.0. We depend on the upstream project pinned to commit
-`d015e9bfe441bd90ae431bac24c55cb74bdbce26`; its body assets remain upstream.
-See [Whole-body physics simulation of fruit fly locomotion (Nature, 2025)](
-https://doi.org/10.1038/s41586-025-09029-4).
-
-Relevant upstream code: [flight environments](https://github.com/TuragaLab/flybody/blob/d015e9bfe441bd90ae431bac24c55cb74bdbce26/flybody/fly_envs.py),
-[flight task](https://github.com/TuragaLab/flybody/blob/d015e9bfe441bd90ae431bac24c55cb74bdbce26/flybody/tasks/flight_imitation.py),
-[synthetic trajectory](https://github.com/TuragaLab/flybody/blob/d015e9bfe441bd90ae431bac24c55cb74bdbce26/flybody/tasks/synthetic_trajectories.py).
+- [Whole-body physics simulation of fruit fly locomotion, Nature (2025)](https://doi.org/10.1038/s41586-025-09029-4)
+- [Flybody flight environments](https://github.com/TuragaLab/flybody/blob/d015e9bfe441bd90ae431bac24c55cb74bdbce26/flybody/fly_envs.py)
+- [Flight imitation task / wingbeat controller](https://github.com/TuragaLab/flybody/blob/d015e9bfe441bd90ae431bac24c55cb74bdbce26/flybody/tasks/flight_imitation.py)
+- [Synthetic trajectories](https://github.com/TuragaLab/flybody/blob/d015e9bfe441bd90ae431bac24c55cb74bdbce26/flybody/tasks/synthetic_trajectories.py)
