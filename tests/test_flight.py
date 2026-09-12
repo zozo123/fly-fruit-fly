@@ -5,6 +5,12 @@ from stable_baselines3.common.env_checker import check_env
 from fly_fruit_fly.env import FlightEnv, flatten, end_flags, video_capture_stride
 
 
+EXPECTED_WING_ACTIONS = {
+    "wing_yaw_left", "wing_roll_left", "wing_pitch_left",
+    "wing_yaw_right", "wing_roll_right", "wing_pitch_right",
+}
+
+
 def test_flatten_order():
     np.testing.assert_array_equal(flatten({"z": [3], "a": [[1, 2]]}), [1, 2, 3])
 
@@ -40,9 +46,10 @@ def test_simulator_contract_and_reproducibility():
     try:
         check_env(env, warn=True, skip_render_check=True)
         assert env.dt == pytest.approx(0.0002)
-        assert env.action_space.shape == (7,)
-        assert len(env._action_names) == 7
-        assert env._action_names[-1] == "user_0"
+        assert len(env._action_names) == env.action_space.shape[0]
+        assert env._action_names[env._user_action_idx] == "user_0"
+        assert len(env._wing_action_indices) == 6
+        assert {env._action_names[i] for i in env._wing_action_indices} == EXPECTED_WING_ACTIONS
         first, _ = env.reset(seed=42)
         action = np.zeros(env.action_space.shape, dtype=np.float32)
         obs, reward, _, _, info = env.step(action)
@@ -60,8 +67,28 @@ def test_simulator_contract_and_reproducibility():
         env.close()
 
 
+def test_wings_controller_exposes_only_flight_channels():
+    env = FlightEnv(control_mode="wings")
+    try:
+        check_env(env, warn=True, skip_render_check=True)
+        assert env.action_space.shape == (7,)
+        action = np.zeros(7, dtype=np.float32)
+        action[0] = 0.25
+        action[-1] = -0.5
+        expanded = env._expand_action(action)
+        assert expanded.shape == env._full_action_low.shape
+        assert expanded[env._wing_action_indices[0]] == pytest.approx(0.25)
+        assert expanded[env._user_action_idx] == pytest.approx(-0.5)
+        active = set(np.flatnonzero(expanded))
+        assert active <= set(env._flight_action_indices)
+        assert all(expanded[i] == 0 for i in range(len(expanded))
+                   if i not in env._flight_action_indices)
+    finally:
+        env.close()
+
+
 def test_action_repeat_preserves_control_rate_measurements():
-    env = FlightEnv(action_repeat=10)
+    env = FlightEnv(control_mode="wings", action_repeat=10)
     try:
         check_env(env, warn=True, skip_render_check=True)
         assert env.agent_dt == pytest.approx(0.002)
