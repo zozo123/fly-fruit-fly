@@ -86,6 +86,12 @@ class OfficialFlightPolicy:
                 "Official expert evaluation needs the optional TensorFlow runtime. "
                 "Install with: pip install -e '.[expert]'"
             ) from exc
+        # TFP uses lazy imports. Importing its top-level package alone does not
+        # register Independent_ACTTypeSpec, which this SavedModel needs.
+        tfp.distributions.Independent(
+            tfp.distributions.Normal(tf.zeros([12]), tf.ones([12])),
+            reinterpreted_batch_ndims=1,
+        )
         self._tf = tf
         self._policy = tf.saved_model.load(str(policy_dir))
 
@@ -95,7 +101,7 @@ class OfficialFlightPolicy:
 
     def predict(self, observation: dict[str, np.ndarray]) -> np.ndarray:
         batched = {
-            key: self._tf.convert_to_tensor(np.expand_dims(value, 0))
+            key: self._tf.convert_to_tensor(np.expand_dims(value, 0), dtype=self._tf.float32)
             for key, value in observation.items()
         }
         distribution = self._policy(batched)
