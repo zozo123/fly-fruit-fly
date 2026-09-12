@@ -1,13 +1,77 @@
 # fly-fruit-fly
 
-Teach a simulated fruit fly to follow a straight flight path, using
-[Flybody](https://github.com/TuragaLab/flybody)'s actual MuJoCo body and wingbeat
-generator. A small PPO policy learns corrections to the existing wing controls.
+**A real MuJoCo flight-learning experiment. Stable flight is not achieved yet.**
 
-**First milestone:** a reproducible training run, saved controller, evaluation
-metrics, and video. This is a flight-learning baseline, not a reconstructed fly
-brain. No connectome data or pretrained controller is bundled. Short smoke runs
-validate the pipeline; they do not establish successful learned flight.
+A small PPO controller learns corrections to [Flybody](https://github.com/TuragaLab/flybody)'s
+wingbeat generator. This repository contains the code, the first trained checkpoint,
+raw measurements, and actual simulator videos—including the failures.
+It does **not** contain a fruit-fly connectome or a reconstructed biological brain.
+
+[![Side-by-side simulation: both controllers fail](media/poster.png)](media/comparison.mp4)
+
+**[Watch/download the comparison movie](media/comparison.mp4)** ·
+[Unedited baseline](media/baseline.mp4) · [Unedited PPO attempt](media/ppo-8192.mp4)
+
+The movie shows evaluation seed **10000**, selected as the first episode rather
+than the best episode. Orange is the simulated fly; the translucent ghost is the
+target. Motion is approximately **10× slower than simulated time**. Each panel
+holds its last frame after termination, explicitly labeled; the hold is not
+additional flight. There is no generated flight footage.
+
+## What we verified
+
+[Run 34698143882](https://github.com/zozo123/fly-fruit-fly/actions/runs/34698143882)
+completed on **2026-09-12**, using source commit
+[`54b60a0`](https://github.com/zozo123/fly-fruit-fly/tree/54b60a0f05d3b7821365897a6e8410080b2c6bf2).
+Five simulator tests passed. The run trained for 8,192 steps, saved the model and
+normalization statistics, reloaded them, evaluated three held-out initial wingbeat
+phases, and produced both videos. **Passing CI confirms that pipeline; it does not
+mean the fly learned to fly.**
+
+| Measurement | Untrained wingbeat | PPO after 8,192 steps |
+| --- | ---: | ---: |
+| Completed reference | 0 / 3 | 0 / 3 |
+| Failed episodes | 3 / 3 | 3 / 3 |
+| Mean episode duration | 53.27 ms | 62.07 ms |
+| Mean episode return | 97.11 | 106.76 |
+| Mean tracking error¹ | 0.289 cm | 0.388 cm |
+
+¹ Mean of each episode's mean position error, over its own duration. The episodes
+have different lengths; this is not a matched-time error comparison.
+
+**Interpretation:** episodes lasted 16.5% longer and return increased, but average
+tracking error worsened and every attempt failed well before the ~0.6-second goal.
+This is one short training run with one training seed and three evaluation phases.
+It does not establish reliable improvement, successful hovering, takeoff, or general flight.
+
+## Evidence you can inspect
+
+The original results are committed here, so they do not depend on expiring Actions
+artifacts: [baseline JSON](results/2026-09-12-smoke/baseline.json),
+[PPO JSON](results/2026-09-12-smoke/ppo.json),
+[training configuration](results/2026-09-12-smoke/training.json),
+[installed environment](results/2026-09-12-smoke/environment.txt),
+[provenance and file hashes](results/2026-09-12-smoke/provenance.json).
+The original downloaded artifact's SHA-256 matched GitHub's recorded digest before
+these files were extracted. The movies were decoded and inspected.
+
+Check the committed evidence without installing a simulator:
+
+```bash
+python scripts/verify_results.py
+```
+
+After installing the project, replay the saved controller:
+
+```bash
+fly evaluate --checkpoint results/2026-09-12-smoke --episodes 3 --video --output runs/replay
+```
+
+The checkpoint and its matching statistics are included. Exact numeric replay
+can vary across platforms and dependency versions; the recorded environment is
+provided, and this publication does not claim an independent second training run.
+To reproduce the annotated movie from the raw videos on Linux, install Pillow
+and FFmpeg, then run `python scripts/make_movie.py`.
 
 ## Run
 
@@ -36,9 +100,30 @@ shown in the workflow. On headless Ubuntu, install `libegl1-mesa`,
 `libgl1-mesa-dri`, and `ffmpeg`. On a desktop, omit the EGL setting if the normal
 MuJoCo renderer works. Training itself does not capture video.
 
+## Continue training the saved model
+
+```bash
+fly train --resume results/2026-09-12-smoke --steps 100000 --output runs/continued
+fly evaluate --checkpoint runs/continued --episodes 5 --video --output runs/continued-evaluation
+```
+
+`--steps` is the **additional** budget when resuming, rounded up to a complete
+rollout. We restore weights, optimizer, step counters, and observation/reward
+normalization. Training starts a fresh seeded episode; this is not a bit-exact
+continuation of simulator or random-number state. Use a new empty output directory
+to preserve the source checkpoint. `training.json` records the starting and added
+step counts. `--checkpoint-every 10240` controls periodic checkpoint frequency.
+Periodic files use SB3's names: `rl_model_N_steps.zip` and
+`rl_model_vecnormalize_N_steps.pkl`. To resume one, copy the matching pair into a
+new directory as `policy.zip` and `normalize.pkl`.
+
+The integration workflow also resumes training for 512 steps, checks the cumulative
+counter and changed policy weights, verifies normalization counts continue, and
+loads the resumed model for an evaluation episode.
+
 ## No local setup: GitHub Actions
 
-Open [Actions → Flight baseline](../../actions/workflows/flight.yml).
+Open [Actions → Flight baseline](https://github.com/zozo123/fly-fruit-fly/actions/workflows/flight.yml).
 Each push runs simulator tests, measures the untrained controller, trains for
 8,192 steps, reloads the saved model, and renders an evaluation. This is a smoke
 budget, not enough to assume convergence. For a longer experiment, choose

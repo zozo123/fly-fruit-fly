@@ -1,0 +1,21 @@
+{
+  "source_commit": "54b60a0f05d3b7821365897a6e8410080b2c6bf2",
+  "upstream_commit": "d015e9bfe441bd90ae431bac24c55cb74bdbce26",
+  "run_url": "https://github.com/zozo123/fly-fruit-fly/actions/runs/34698143882",
+  "artifact_id": 10298989307,
+  "original_artifact_sha256": "e75dbefc92ad96546968454e2302e6886f245f94389e50deb4308369f549abd7",
+  "verification": "Downloaded original artifact, matched archive SHA-256, decoded videos, inspected frames, recomputed recorded metrics. No second training run claimed.",
+  "movie": "Side-by-side seed 10000 from original videos at 50 fps; end frames held and labeled; GIF at 25 fps.",
+  "sha256": {
+    "media/baseline.mp4": "5c921332efcede4125b9688affa0a2a4b6034ba991109cab7a0d3b34b8885e67",
+    "media/comparison.mp4": "2a155df5133f77921d2c93e65df6e36e062b37b19d463fc63e05c1a1bf04d60e",
+    "media/poster.png": "bfbe8b9923ff109cf95e4b07c9dbe67dee7d2cc3efbcf9cb0f3dd18b34732ffb",
+    "media/ppo-8192.mp4": "c379eadd95ab11ba9f1d8f0f74f37f4dd34e22aa05061b5a119c6d7a71635931",
+    "results/2026-09-12-smoke/baseline.json": "e5030c5edc3bd027db8fe9798e32097a4e6f645885658cb65ec48d864ede688d",
+    "results/2026-09-12-smoke/environment.txt": "89f091cc15cbd7a04fec062cd54ca36b9156a3957ff02c7178d47dc265cf7a89",
+    "results/2026-09-12-smoke/normalize.pkl": "8f884fdfafe49496af4c078a9e05628bc64564a1438849eb5463315de19693f9",
+    "results/2026-09-12-smoke/policy.zip": "07d2c537645df0ef3b6c79d125d7b4349b4df2b211d310c2ed765f23e0004ee3",
+    "results/2026-09-12-smoke/ppo.json": "16326329354590087b059d49e0accd86d46dbeea0b6246b63fa261dd95f54959",
+    "results/2026-09-12-smoke/training.json": "8d8901a41cc3c810570e40f0164153a282d8d3b1ec61145782378cbe428b6eca"
+  }
+}

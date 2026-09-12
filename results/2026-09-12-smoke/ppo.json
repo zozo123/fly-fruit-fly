@@ -1,0 +1,40 @@
+{
+  "controller": "ppo",
+  "checkpoint": "runs/train",
+  "video_slowdown": 10,
+  "episodes": [
+    {
+      "seed": 10000,
+      "steps": 308,
+      "return": 100.58458449601622,
+      "duration_s": 0.06160000000000125,
+      "mean_tracking_error_cm": 0.4163918670281334,
+      "final_height_cm": 0.21788529610167898,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 10001,
+      "steps": 309,
+      "return": 116.89792403877546,
+      "duration_s": 0.06180000000000126,
+      "mean_tracking_error_cm": 0.3224239838240711,
+      "final_height_cm": 0.22240655831639927,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 10002,
+      "steps": 314,
+      "return": 102.8062826252464,
+      "duration_s": 0.06280000000000124,
+      "mean_tracking_error_cm": 0.4242312858872168,
+      "final_height_cm": 0.2242021510142864,
+      "failed": true,
+      "completed_reference": false
+    }
+  ],
+  "completion_rate": 0.0,
+  "mean_return": 106.76293038667937,
+  "note": "Completion of a 0.6 s synthetic reference is not proof of general flight."
+}

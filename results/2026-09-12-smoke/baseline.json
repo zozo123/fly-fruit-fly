@@ -1,0 +1,40 @@
+{
+  "controller": "untrained_wingbeat",
+  "checkpoint": null,
+  "video_slowdown": 10,
+  "episodes": [
+    {
+      "seed": 10000,
+      "steps": 269,
+      "return": 99.63126818821532,
+      "duration_s": 0.05380000000000103,
+      "mean_tracking_error_cm": 0.28216734405859534,
+      "final_height_cm": 0.1614314799350231,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 10001,
+      "steps": 262,
+      "return": 95.19388853972501,
+      "duration_s": 0.05240000000000099,
+      "mean_tracking_error_cm": 0.2965121127004978,
+      "final_height_cm": 0.16057159432951768,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 10002,
+      "steps": 268,
+      "return": 96.49801243921569,
+      "duration_s": 0.05360000000000102,
+      "mean_tracking_error_cm": 0.2878474179390871,
+      "final_height_cm": 0.16012212486034463,
+      "failed": true,
+      "completed_reference": false
+    }
+  ],
+  "completion_rate": 0.0,
+  "mean_return": 97.10772305571868,
+  "note": "Completion of a 0.6 s synthetic reference is not proof of general flight."
+}

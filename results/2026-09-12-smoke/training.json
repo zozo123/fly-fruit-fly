@@ -1,0 +1,7 @@
+{
+  "seed": 0,
+  "requested_steps": 8192,
+  "actual_steps": 8192,
+  "algorithm": "PPO",
+  "connectome": false
+}
