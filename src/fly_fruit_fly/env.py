@@ -77,11 +77,18 @@ class FlightEnv(gym.Env):
             high = np.array([1.0], dtype=np.float32)
         self.action_space = gym.spaces.Box(low, high, dtype=np.float32)
 
-        obs = flatten(self._env.reset().observation)
+        ts = self._env.reset()
+        self._raw_observation = ts.observation
+        obs = flatten(ts.observation)
         self.observation_space = gym.spaces.Box(
             -np.inf, np.inf, shape=obs.shape, dtype=np.float32,
         )
         self._ended = True
+
+    @property
+    def raw_observation(self):
+        """Latest native Flybody observation mapping for upstream-policy inference."""
+        return self._raw_observation
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
@@ -90,6 +97,7 @@ class FlightEnv(gym.Env):
             self.action_space.seed(seed)
         self._ended = False
         ts = self._env.reset()
+        self._raw_observation = ts.observation
         return flatten(ts.observation), self._info(ts)
 
     def _info(self, ts):
@@ -134,6 +142,7 @@ class FlightEnv(gym.Env):
             terminated, truncated = end_flags(ts)
             if terminated or truncated:
                 break
+        self._raw_observation = ts.observation
         self._ended = terminated or truncated
         info["inner_control_steps"] = inner_steps
         info["tracking_error_sum_cm"] = tracking_error_sum
