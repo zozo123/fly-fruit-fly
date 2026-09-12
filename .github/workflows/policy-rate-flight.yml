@@ -1,0 +1,60 @@
+name: Policy-rate flight experiment
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/policy-rate-flight.yml']
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: Fresh PPO policy steps at the 2 ms policy interval
+        default: '8192'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: policy-rate-flight
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      MUJOCO_GL: egl
+      OMP_NUM_THREADS: '2'
+      TRAIN_STEPS: ${{ inputs.steps || '8192' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install CPU training stack
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1-mesa libgl1-mesa-dri ffmpeg
+          python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e '.[dev]'
+          python -m pip freeze > environment.txt
+          python scripts/verify_results.py
+          pytest -q
+      - name: Measure matched wing-controller baseline
+        run: fly evaluate --control-mode wings --action-repeat 10 --episodes 10 --seed 30000 --output runs/baseline
+      - name: Train wing-focused controller at 2 ms policy rate
+        run: fly train --control-mode wings --action-repeat 10 --steps "$TRAIN_STEPS" --gamma 0.99 --gae-lambda 0.95 --checkpoint-every 2048 --output runs/candidate
+      - name: Evaluate candidate on the same held-out phases
+        run: fly evaluate --checkpoint runs/candidate --episodes 10 --seed 30000 --video --output runs/evaluation
+      - name: Record task acceptance result
+        run: |
+          fly assess runs/evaluation/metrics.json --baseline runs/baseline/metrics.json > runs/assessment.json
+          python -c 'import json; d=json.load(open("runs/assessment.json")); print("Task gate passed:", d["task_gate_passed"]); print(json.dumps(d, indent=2))' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: policy-rate-flight-${{ github.run_id }}
+          path: |
+            runs/
+            environment.txt
+          retention-days: 30
