@@ -23,11 +23,13 @@ def test_termination_semantics(last, discount, expected):
 
 
 def test_video_capture_timing():
-    stride, slowdown = video_capture_stride(0.002, fps=50, slowdown=10)
-    assert stride == 1
-    assert slowdown == pytest.approx(10.0)
-    stride, slowdown = video_capture_stride(0.002, fps=50, slowdown=1)
+    # Flybody flight control runs at 0.2 ms. Every 10th control step rendered
+    # at 50 fps gives 2 ms of simulated time per 20 ms video frame: 10x slow.
+    stride, slowdown = video_capture_stride(0.0002, fps=50, slowdown=10)
     assert stride == 10
+    assert slowdown == pytest.approx(10.0)
+    stride, slowdown = video_capture_stride(0.0002, fps=50, slowdown=1)
+    assert stride == 100
     assert slowdown == pytest.approx(1.0)
     with pytest.raises(ValueError):
         video_capture_stride(0, fps=50, slowdown=10)
@@ -37,7 +39,7 @@ def test_simulator_contract_and_reproducibility():
     env = FlightEnv()
     try:
         check_env(env, warn=True, skip_render_check=True)
-        assert env.dt == pytest.approx(0.002)
+        assert env.dt == pytest.approx(0.0002)
         first, _ = env.reset(seed=42)
         action = np.zeros(env.action_space.shape, dtype=np.float32)
         obs, reward, _, _, info = env.step(action)
@@ -49,7 +51,7 @@ def test_simulator_contract_and_reproducibility():
         with pytest.raises(ValueError):
             env.step(np.full(env.action_space.shape, np.nan))
         # Ensure the reference really spans the full task, not the 40 ms stub.
-        assert env._env.task._traj_timesteps > 290
+        assert env._env.task._traj_timesteps > 2900
     finally:
         env.close()
 
