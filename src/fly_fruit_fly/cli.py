@@ -7,6 +7,9 @@ from pathlib import Path
 
 import numpy as np
 
+from .env import CONTROL_MODES, video_capture_stride
+
+
 def positive(value):
     value = int(value)
     if value <= 0:
@@ -19,6 +22,14 @@ def probability(value):
     if not np.isfinite(value) or not 0 < value <= 1:
         raise argparse.ArgumentTypeError("must be finite and in (0, 1]")
     return value
+
+
+def checkpoint_control_mode(checkpoint):
+    """Read controller shape metadata, treating legacy checkpoints as full control."""
+    training = checkpoint / "training.json"
+    if not training.is_file():
+        return "full"
+    return json.loads(training.read_text()).get("control_mode", "full")
 
 
 def train(args):
@@ -36,8 +47,16 @@ def train(args):
         for filename in ("policy.zip", "normalize.pkl"):
             if not (args.resume / filename).is_file():
                 raise FileNotFoundError(f"Missing resume file: {args.resume / filename}")
+        previous_mode = checkpoint_control_mode(args.resume)
+        if args.control_mode != previous_mode:
+            raise ValueError(
+                f"Cannot resume {previous_mode!r} controller as {args.control_mode!r}; "
+                "action spaces differ"
+            )
     args.output.mkdir(parents=True, exist_ok=True)
-    env = DummyVecEnv([lambda: Monitor(FlightEnv(args.seed))])
+    env = DummyVecEnv([
+        lambda: Monitor(FlightEnv(args.seed, control_mode=args.control_mode))
+    ])
     try:
         if args.resume:
             env = VecNormalize.load(args.resume / "normalize.pkl", env)
@@ -70,7 +89,7 @@ def train(args):
         (args.output / "training.json").write_text(json.dumps({
             "seed": args.seed, "requested_steps": args.steps,
             "actual_steps": model.num_timesteps, "algorithm": "PPO",
-            "connectome": False,
+            "connectome": False, "control_mode": args.control_mode,
             "starting_steps": starting_steps,
             "additional_steps": model.num_timesteps - starting_steps,
             "resumed_from": str(args.resume) if args.resume else None,
@@ -89,9 +108,21 @@ def evaluate(args):
     if args.output.exists() and any(args.output.iterdir()):
         raise ValueError("Output directory must be empty; choose a new evaluation directory")
     args.output.mkdir(parents=True, exist_ok=True)
-    env = FlightEnv(render_mode="rgb_array" if args.video else None)
+    control_mode = args.control_mode
+    if args.checkpoint:
+        saved_mode = checkpoint_control_mode(args.checkpoint)
+        if control_mode is None:
+            control_mode = saved_mode
+        elif control_mode != saved_mode:
+            raise ValueError(
+                f"Checkpoint uses {saved_mode!r} control, not {control_mode!r}"
+            )
+    control_mode = control_mode or "full"
+    env = FlightEnv(render_mode="rgb_array" if args.video else None,
+                    control_mode=control_mode)
     model = normalizer = writer = trace = None
     episodes = []
+    capture_stride = realized_slowdown = None
     try:
         if args.checkpoint:
             from stable_baselines3 import PPO
@@ -107,7 +138,12 @@ def evaluate(args):
         ])
         trace_writer.writeheader()
         if args.video:
-            writer = imageio.get_writer(args.output / "flight.mp4", fps=50)
+            capture_stride, realized_slowdown = video_capture_stride(
+                env.dt, fps=env.metadata["render_fps"], slowdown=args.video_slowdown
+            )
+            writer = imageio.get_writer(
+                args.output / "flight.mp4", fps=env.metadata["render_fps"]
+            )
         for episode in range(args.episodes):
             obs, info = env.reset(seed=args.seed + episode)
             total_reward, errors, steps = 0., [], 0
@@ -116,7 +152,7 @@ def evaluate(args):
                 writer.append_data(env.render())
             while not (terminated or truncated):
                 if model is None:
-                    # Zero residual still invokes upstream's wingbeat generator.
+                    # Zero residual/frequency command still invokes upstream WBPG.
                     action = np.zeros(env.action_space.shape, dtype=np.float32)
                 else:
                     action, _ = model.predict(normalizer.normalize_obs(obs.copy()),
@@ -129,8 +165,8 @@ def evaluate(args):
                 steps += 1
                 trace_writer.writerow({"seed": args.seed + episode, "step": steps,
                                        **info, "reward": reward})
-                # 10x slow motion: 10 physics-control steps per video frame.
-                if writer and episode == 0 and (steps % 10 == 0 or terminated or truncated):
+                if (writer and episode == 0 and
+                        (steps % capture_stride == 0 or terminated or truncated)):
                     writer.append_data(env.render())
             episodes.append({
                 "seed": args.seed + episode, "steps": steps,
@@ -140,12 +176,14 @@ def evaluate(args):
                 "failed": terminated, "completed_reference": truncated,
             })
         report = {
-            "schema_version": 2,
+            "schema_version": 3,
             "task": {"name": "flybody_straight_flight", "speed_cm_s": 20,
                      "initial_height_cm": 1, "reference_duration_s": 0.6},
             "controller": "ppo" if model else "untrained_wingbeat",
+            "control_mode": control_mode,
             "checkpoint": str(args.checkpoint) if args.checkpoint else None,
-            "video_slowdown": 10 if args.video else None,
+            "video_slowdown": realized_slowdown if args.video else None,
+            "video_capture_stride": capture_stride if args.video else None,
             "episodes": episodes,
             "completion_rate": float(np.mean([e["completed_reference"] for e in episodes])),
             "mean_return": float(np.mean([e["return"] for e in episodes])),
@@ -183,6 +221,8 @@ def main():
     training.add_argument("--threads", type=positive, default=2)
     training.add_argument("--resume", type=Path,
                           help="Directory containing policy.zip and matching normalize.pkl")
+    training.add_argument("--control-mode", choices=CONTROL_MODES, default="full",
+                          help="full learns all residual actions; frequency learns only WBPG frequency")
     training.add_argument("--checkpoint-every", type=positive, default=10_240)
     training.add_argument("--gamma", type=probability,
                           help="Explicit discount override; otherwise preserve PPO/checkpoint default")
@@ -192,9 +232,13 @@ def main():
     training.set_defaults(func=train)
     evaluation = sub.add_parser("evaluate", help="Evaluate PPO or the untrained baseline")
     evaluation.add_argument("--checkpoint", type=Path)
+    evaluation.add_argument("--control-mode", choices=CONTROL_MODES,
+                            help="Defaults to checkpoint metadata, or full for untrained baseline")
     evaluation.add_argument("--episodes", type=positive, default=5)
     evaluation.add_argument("--seed", type=int, default=10_000)
     evaluation.add_argument("--video", action="store_true")
+    evaluation.add_argument("--video-slowdown", type=positive, default=10,
+                            help="Requested playback slowdown relative to simulator time")
     evaluation.add_argument("--output", type=Path, default=Path("runs/evaluation"))
     evaluation.set_defaults(func=evaluate)
     gate = sub.add_parser("assess", help="Evaluate recorded metrics against fixed flight criteria")
