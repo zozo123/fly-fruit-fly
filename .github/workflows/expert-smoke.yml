@@ -1,0 +1,84 @@
+name: Expert flight smoke
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/expert-smoke.yml'
+      - 'src/fly_fruit_fly/**'
+      - 'pyproject.toml'
+
+permissions:
+  contents: read
+
+jobs:
+  expert:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      MUJOCO_GL: egl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install simulator and SavedModel runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1-mesa libgl1-mesa-dri ffmpeg
+          python -m pip install -e .
+          python -m pip install tensorflow-cpu==2.15.1 tensorflow-probability==0.23.0
+      - name: Load released flight model and step Flybody
+        run: |
+          python - <<'PY'
+          import io, urllib.request, zipfile
+          from pathlib import Path
+          import numpy as np
+          import tensorflow as tf
+          import tensorflow_probability as tfp  # registers SavedModel distribution types
+          from flybody.fly_envs import flight_imitation
+          from flybody.tasks.synthetic_trajectories import constant_speed_trajectory
+
+          del tfp
+          url = 'https://janelia.figshare.com/ndownloader/files/44815195'
+          with urllib.request.urlopen(url, timeout=120) as response:
+              payload = response.read()
+          with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+              for member in archive.namelist():
+                  if member.startswith('flight/'):
+                      archive.extract(member, 'upstream-policy')
+          policy = tf.saved_model.load('upstream-policy/flight')
+          print('policy signatures:', policy.signatures)
+
+          env = flight_imitation(random_state=np.random.RandomState(123))
+          dt = env.control_timestep()
+          qpos, qvel = constant_speed_trajectory(
+              n_steps=int(round(0.6 / dt)) + 16,
+              speed=20, init_pos=(0, 0, 1), body_rot_angle_y=-47.5,
+              control_timestep=dt,
+          )
+          env.task._traj_generator.set_next_trajectory(qpos, qvel)
+          ts = env.reset()
+          print('dt:', dt, 'action shape:', env.action_spec().shape)
+          batched = {
+              key: tf.convert_to_tensor(np.expand_dims(value, 0))
+              for key, value in ts.observation.items()
+          }
+          distribution = policy(batched)
+          print('policy output type:', type(distribution))
+          action = distribution.mean()[0].numpy()
+          print('expert action shape:', action.shape)
+          print('expert action finite:', np.isfinite(action).all())
+          assert action.shape == env.action_spec().shape == (12,)
+          assert np.isfinite(action).all()
+          for step in range(50):
+              ts = env.step(action.copy())
+              assert np.isfinite(ts.reward)
+              if ts.last():
+                  break
+              batched = {
+                  key: tf.convert_to_tensor(np.expand_dims(value, 0))
+                  for key, value in ts.observation.items()
+              }
+              action = policy(batched).mean()[0].numpy()
+          print('completed expert smoke steps:', step + 1, 'time:', env.physics.time(), 'last:', ts.last())
+          PY
