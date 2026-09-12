@@ -7,7 +7,7 @@ wingbeat generator. This repository contains the code, the first trained checkpo
 raw measurements, and actual simulator videos—including the failures.
 It does **not** contain a fruit-fly connectome or a reconstructed biological brain.
 
-[![Side-by-side simulation: both controllers fail](media/poster.png)](media/comparison.mp4)
+[![Animated real simulation: both controllers fail](media/preview.gif)](media/comparison.mp4)
 
 **[Watch/download the comparison movie](media/comparison.mp4)** ·
 [Unedited baseline](media/baseline.mp4) · [Unedited PPO attempt](media/ppo-8192.mp4)
@@ -17,6 +17,38 @@ than the best episode. Orange is the simulated fly; the translucent ghost is the
 target. Motion is approximately **10× slower than simulated time**. Each panel
 holds its last frame after termination, explicitly labeled; the hold is not
 additional flight. There is no generated flight footage.
+
+The animation plays directly in the README. Click it for the full MP4; if GitHub
+shows a file page instead of a player, choose **View raw / Download**. Mobile apps
+may pause GIF autoplay; the MP4 link remains available.
+
+## Sustained flight: the next model milestone
+
+The **Sustained flight experiment** workflow continues the recorded checkpoint for
+65,536 additional steps, then evaluates ten new, matched initial wingbeat phases.
+It uses explicit `gamma=0.999` and `gae_lambda=0.99` overrides to test longer-horizon
+credit assignment. These are experimental settings, not demonstrated improvements.
+At the 0.2 ms control interval, `gamma=0.999` gives an approximate 0.2-second
+discount horizon, compared with ~0.02 seconds for `0.99`.
+
+The task gate requires **at least ten episodes**, with **90%** completing at least
+**0.59 seconds** and each passing episode averaging at most **0.1 cm** position
+error. This is a declared engineering milestone for the straight-flight task,
+not a claim of takeoff, maneuverability, robustness, or biological fidelity.
+
+```bash
+fly train --resume results/2026-09-12-smoke --steps 65536 --gamma 0.999 --gae-lambda 0.99 --output runs/candidate
+fly evaluate --checkpoint runs/candidate --episodes 10 --seed 20000 --video --output runs/candidate-eval
+fly assess runs/candidate-eval/metrics.json --require-pass
+```
+
+`assess --require-pass` exits **2** when the gate fails. Without that flag, it
+reports the result without failing the command. A green experiment workflow means
+the experiment ran; its `assessment.json` states whether flight passed. Models
+are never silently promoted on reward alone. Each evaluation now also saves
+`trajectory.csv` for time-aligned error analysis. Existing output directories are
+protected from accidental overwrite. Assessment rejects malformed metrics,
+non-finite values, duplicate seeds, and mismatched comparison configurations.
 
 ## What we verified
 

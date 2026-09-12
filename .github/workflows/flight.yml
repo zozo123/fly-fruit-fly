@@ -41,13 +41,18 @@ jobs:
           python -m pip install -e '.[dev]'
           python -m pip freeze > environment.txt
       - name: Test actual simulator
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q
+          python scripts/verify_results.py
+          fly assess results/2026-09-12-smoke/ppo.json --baseline results/2026-09-12-smoke/baseline.json
       - name: Measure untrained wingbeat baseline
         run: fly evaluate --episodes 3 --video --output runs/baseline
       - name: Train a small PPO controller
         run: fly train --steps "$TRAIN_STEPS" --output runs/train
       - name: Reload and evaluate checkpoint on held-out seeds
         run: fly evaluate --checkpoint runs/train --episodes 3 --video --output runs/evaluation
+      - name: Report measured performance without claiming flight success
+        run: fly assess runs/evaluation/metrics.json --baseline runs/baseline/metrics.json
       - name: Verify resumed training and checkpoint pairs
         run: |
           fly train --resume runs/train --steps 512 --checkpoint-every 512 --output runs/resumed

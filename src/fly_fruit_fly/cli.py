@@ -1,13 +1,11 @@
 """Train, evaluate, and render a genuine physics-based flight attempt."""
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
 import numpy as np
-
-from .env import FlightEnv
-
 
 def positive(value):
     value = int(value)
@@ -16,7 +14,15 @@ def positive(value):
     return value
 
 
+def probability(value):
+    value = float(value)
+    if not np.isfinite(value) or not 0 < value <= 1:
+        raise argparse.ArgumentTypeError("must be finite and in (0, 1]")
+    return value
+
+
 def train(args):
+    from .env import FlightEnv
     import torch
     from stable_baselines3 import PPO
     from stable_baselines3.common.callbacks import CheckpointCallback
@@ -47,6 +53,14 @@ def train(args):
                         n_steps=512, batch_size=64, n_epochs=5,
                         policy_kwargs={"net_arch": [64, 64]}, learning_rate=3e-4)
         starting_steps = model.num_timesteps
+        # Changing credit-assignment horizon is explicit and recorded. Defaults
+        # preserve existing checkpoint hyperparameters when resuming.
+        if args.gamma is not None:
+            model.gamma = args.gamma
+            model.rollout_buffer.gamma = args.gamma
+        if args.gae_lambda is not None:
+            model.gae_lambda = args.gae_lambda
+            model.rollout_buffer.gae_lambda = args.gae_lambda
         callback = CheckpointCallback(save_freq=args.checkpoint_every,
                                       save_path=str(args.output), save_vecnormalize=True)
         model.learn(total_timesteps=args.steps, callback=callback,
@@ -61,6 +75,8 @@ def train(args):
             "additional_steps": model.num_timesteps - starting_steps,
             "resumed_from": str(args.resume) if args.resume else None,
             "checkpoint_every": args.checkpoint_every,
+            "gamma": model.gamma,
+            "gae_lambda": model.gae_lambda,
         }, indent=2) + "\n")
     finally:
         env.close()
@@ -68,21 +84,28 @@ def train(args):
 
 def evaluate(args):
     import imageio.v2 as imageio
+    from .env import FlightEnv
 
+    if args.output.exists() and any(args.output.iterdir()):
+        raise ValueError("Output directory must be empty; choose a new evaluation directory")
     args.output.mkdir(parents=True, exist_ok=True)
     env = FlightEnv(render_mode="rgb_array" if args.video else None)
-    model = normalizer = writer = None
-    if args.checkpoint:
-        from stable_baselines3 import PPO
-        from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
-        model = PPO.load(args.checkpoint / "policy.zip", device="cpu")
-        # The vector wrapper is used only to restore the matching statistics.
-        normalizer = VecNormalize.load(args.checkpoint / "normalize.pkl",
-                                      DummyVecEnv([lambda: env]))
-        normalizer.training = False
-        normalizer.norm_reward = False
+    model = normalizer = writer = trace = None
     episodes = []
     try:
+        if args.checkpoint:
+            from stable_baselines3 import PPO
+            from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+            model = PPO.load(args.checkpoint / "policy.zip", device="cpu")
+            normalizer = VecNormalize.load(args.checkpoint / "normalize.pkl",
+                                          DummyVecEnv([lambda: env]))
+            normalizer.training = False
+            normalizer.norm_reward = False
+        trace = (args.output / "trajectory.csv").open("w", newline="")
+        trace_writer = csv.DictWriter(trace, fieldnames=[
+            "seed", "step", "time_s", "tracking_error_cm", "height_cm", "reward",
+        ])
+        trace_writer.writeheader()
         if args.video:
             writer = imageio.get_writer(args.output / "flight.mp4", fps=50)
         for episode in range(args.episodes):
@@ -104,6 +127,8 @@ def evaluate(args):
                 total_reward += reward
                 errors.append(info["tracking_error_cm"])
                 steps += 1
+                trace_writer.writerow({"seed": args.seed + episode, "step": steps,
+                                       **info, "reward": reward})
                 # 10x slow motion: 10 physics-control steps per video frame.
                 if writer and episode == 0 and (steps % 10 == 0 or terminated or truncated):
                     writer.append_data(env.render())
@@ -115,6 +140,9 @@ def evaluate(args):
                 "failed": terminated, "completed_reference": truncated,
             })
         report = {
+            "schema_version": 2,
+            "task": {"name": "flybody_straight_flight", "speed_cm_s": 20,
+                     "initial_height_cm": 1, "reference_duration_s": 0.6},
             "controller": "ppo" if model else "untrained_wingbeat",
             "checkpoint": str(args.checkpoint) if args.checkpoint else None,
             "video_slowdown": 10 if args.video else None,
@@ -128,10 +156,22 @@ def evaluate(args):
     finally:
         if writer:
             writer.close()
+        if trace:
+            trace.close()
         if normalizer:
             normalizer.close()
         else:
             env.close()
+
+
+def assessment(args):
+    from .assessment import assess
+    report = json.loads(args.metrics.read_text())
+    baseline = json.loads(args.baseline.read_text()) if args.baseline else None
+    result = assess(report, baseline)
+    print(json.dumps(result, indent=2, allow_nan=False))
+    if args.require_pass and not result["task_gate_passed"]:
+        raise SystemExit(2)
 
 
 def main():
@@ -144,6 +184,10 @@ def main():
     training.add_argument("--resume", type=Path,
                           help="Directory containing policy.zip and matching normalize.pkl")
     training.add_argument("--checkpoint-every", type=positive, default=10_240)
+    training.add_argument("--gamma", type=probability,
+                          help="Explicit discount override; otherwise preserve PPO/checkpoint default")
+    training.add_argument("--gae-lambda", type=probability,
+                          help="Explicit advantage-estimation horizon override")
     training.add_argument("--output", type=Path, default=Path("runs/train"))
     training.set_defaults(func=train)
     evaluation = sub.add_parser("evaluate", help="Evaluate PPO or the untrained baseline")
@@ -153,6 +197,12 @@ def main():
     evaluation.add_argument("--video", action="store_true")
     evaluation.add_argument("--output", type=Path, default=Path("runs/evaluation"))
     evaluation.set_defaults(func=evaluate)
+    gate = sub.add_parser("assess", help="Evaluate recorded metrics against fixed flight criteria")
+    gate.add_argument("metrics", type=Path)
+    gate.add_argument("--baseline", type=Path)
+    gate.add_argument("--require-pass", action="store_true",
+                      help="Exit 2 when the task gate fails; reporting alone exits 0")
+    gate.set_defaults(func=assessment)
     args = parser.parse_args()
     args.func(args)
 
