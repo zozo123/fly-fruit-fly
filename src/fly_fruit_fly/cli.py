@@ -247,7 +247,9 @@ def main():
     training.add_argument("--resume", type=Path,
                           help="Directory containing policy.zip and matching normalize.pkl")
     training.add_argument("--control-mode", choices=CONTROL_MODES, default="full",
-                          help="full learns six wing residuals plus WBPG frequency; frequency learns only frequency")
+                          help=("full exposes every upstream actuator; wings exposes the six "
+                                "wing residuals plus WBPG frequency; frequency exposes only "
+                                "WBPG frequency"))
     training.add_argument("--action-repeat", type=positive, default=1,
                           help="Hold each policy action for this many 0.2 ms Flybody control ticks")
     training.add_argument("--checkpoint-every", type=positive, default=10_240)
