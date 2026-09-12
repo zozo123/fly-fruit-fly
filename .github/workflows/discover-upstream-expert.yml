@@ -1,0 +1,43 @@
+name: Discover upstream expert
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/discover-upstream-expert.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install project and pinned Flybody
+        run: python -m pip install -e .
+      - name: Download official trained policies only
+        run: |
+          python - <<'PY'
+          from flybody.download_data import figshare_download
+          figshare_download('trained-policies', dest_path='upstream-data')
+          PY
+      - name: Inventory policy archive
+        run: |
+          echo '## Official trained-policy archive' >> "$GITHUB_STEP_SUMMARY"
+          find upstream-data -type f -printf '%P\t%s bytes\n' | sort | tee policy-files.txt
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          cat policy-files.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo '--- text metadata ---'
+          find upstream-data -type f \( -iname 'readme*' -o -iname '*.txt' -o -iname '*.json' -o -iname '*.yaml' -o -iname '*.yml' \) -print0 | while IFS= read -r -d '' f; do
+            echo "===== $f ====="
+            head -200 "$f" || true
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: upstream-policy-inventory
+          path: policy-files.txt
+          retention-days: 3
