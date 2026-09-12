@@ -1,0 +1,22 @@
+{
+  "task_gate_passed": false,
+  "criteria": {
+    "minimum_episodes": 10,
+    "minimum_pass_rate": 0.9,
+    "minimum_duration_s": 0.59,
+    "maximum_mean_error_cm": 0.1
+  },
+  "episodes": 10,
+  "passing_episodes": 0,
+  "pass_rate": 0,
+  "mean_duration_s": 0.07244000000000013,
+  "mean_return": 108.70294454373378,
+  "mean_episode_tracking_error_cm": 0.39441186851167476,
+  "scope": "Straight-flight task only. No takeoff, robustness, or biological validation.",
+  "paired_mean_delta": {
+    "duration_s": 0.019579999999999133,
+    "return": 13.210304144973765,
+    "mean_tracking_error_cm": 0.10357243582952683
+  },
+  "comparison_note": "Descriptive paired differences, not statistical significance. Episode-mean errors cover unequal durations; use traces for matched-time comparisons."
+}
