@@ -37,7 +37,7 @@ def _download_archive() -> bytes:
 def ensure_official_flight_policy(cache_dir: Path) -> Path:
     """Return a verified local copy of the released flight SavedModel.
 
-    Only the `flight/` subtree is extracted. The upstream archive also contains
+    Only the ``flight/`` subtree is extracted. The upstream archive also contains
     walking and vision policies, which this project does not need for flight.
     """
     cache_dir = Path(cache_dir).expanduser().resolve()
@@ -74,20 +74,44 @@ def ensure_official_flight_policy(cache_dir: Path) -> Path:
     return policy_dir
 
 
+def _load_tensorflow_runtime():
+    """Import TensorFlow/TFP and eagerly register legacy distribution TypeSpecs.
+
+    The released SavedModel was produced with TFP 0.16. Newer TFP releases are
+    lazy-loaded, so importing only ``tensorflow_probability`` is not sufficient
+    to register the serialized ``Independent_ACTTypeSpec`` / ``Normal_ACTTypeSpec``
+    names before ``tf.saved_model.load`` decodes the object graph.
+    """
+    try:
+        import tensorflow as tf
+        import tensorflow_probability as tfp
+        # Import concrete distribution modules, not only the lazy TFP facade.
+        # These imports execute AutoCompositeTensor registration before loading
+        # the legacy SavedModel object graph.
+        from tensorflow_probability.python.distributions import independent  # noqa: F401
+        from tensorflow_probability.python.distributions import normal  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "Official expert evaluation needs the optional TensorFlow runtime. "
+            "Install with: pip install -e '.[expert]'"
+        ) from exc
+    return tf, tfp
+
+
 class OfficialFlightPolicy:
     """Deterministic wrapper around the released TensorFlow SavedModel."""
 
     def __init__(self, policy_dir: Path):
-        try:
-            import tensorflow as tf
-            import tensorflow_probability as tfp  # noqa: F401 - registers distribution types
-        except ImportError as exc:
-            raise RuntimeError(
-                "Official expert evaluation needs the optional TensorFlow runtime. "
-                "Install with: pip install -e '.[expert]'"
-            ) from exc
+        tf, self._tfp = _load_tensorflow_runtime()
         self._tf = tf
-        self._policy = tf.saved_model.load(str(policy_dir))
+        try:
+            self._policy = tf.saved_model.load(str(policy_dir))
+        except ValueError as exc:
+            raise RuntimeError(
+                "Could not deserialize the released Flybody policy with the installed "
+                "TensorFlow Probability runtime. Install the pinned expert extra "
+                "(`pip install -e '.[expert]'`) and retry."
+            ) from exc
 
     @classmethod
     def from_cache(cls, cache_dir: Path) -> "OfficialFlightPolicy":
