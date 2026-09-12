@@ -40,18 +40,40 @@ def test_simulator_contract_and_reproducibility():
     try:
         check_env(env, warn=True, skip_render_check=True)
         assert env.dt == pytest.approx(0.0002)
+        assert env.action_space.shape == (7,)
+        assert len(env._action_names) == 7
+        assert env._action_names[-1] == "user_0"
         first, _ = env.reset(seed=42)
         action = np.zeros(env.action_space.shape, dtype=np.float32)
         obs, reward, _, _, info = env.step(action)
         np.testing.assert_array_equal(action, 0)
         assert np.isfinite(obs).all() and np.isfinite(reward)
         assert info["time_s"] > 0
+        assert info["inner_control_steps"] == 1
         repeated, _ = env.reset(seed=42)
         np.testing.assert_allclose(first, repeated)
         with pytest.raises(ValueError):
             env.step(np.full(env.action_space.shape, np.nan))
         # Ensure the reference really spans the full task, not the 40 ms stub.
         assert env._env.task._traj_timesteps > 2900
+    finally:
+        env.close()
+
+
+def test_action_repeat_preserves_control_rate_measurements():
+    env = FlightEnv(action_repeat=10)
+    try:
+        check_env(env, warn=True, skip_render_check=True)
+        assert env.agent_dt == pytest.approx(0.002)
+        env.reset(seed=5)
+        action = np.zeros(env.action_space.shape, dtype=np.float32)
+        obs, reward, terminated, truncated, info = env.step(action)
+        assert np.isfinite(obs).all() and np.isfinite(reward)
+        assert not (terminated and truncated)
+        assert info["inner_control_steps"] == 10
+        assert info["time_s"] == pytest.approx(0.002)
+        assert info["tracking_error_sum_cm"] >= 0
+        assert info["tracking_error_sum_cm"] >= info["tracking_error_cm"]
     finally:
         env.close()
 
