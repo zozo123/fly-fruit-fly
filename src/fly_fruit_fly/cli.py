@@ -24,22 +24,43 @@ def train(args):
     from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
     torch.set_num_threads(args.threads)
+    if args.output.exists() and any(args.output.iterdir()):
+        raise ValueError("Output directory must be empty; choose a new run directory")
+    if args.resume:
+        for filename in ("policy.zip", "normalize.pkl"):
+            if not (args.resume / filename).is_file():
+                raise FileNotFoundError(f"Missing resume file: {args.resume / filename}")
     args.output.mkdir(parents=True, exist_ok=True)
-    env = VecNormalize(DummyVecEnv([lambda: Monitor(FlightEnv(args.seed))]),
-                       norm_obs=True, norm_reward=True, clip_obs=10)
-    model = PPO("MlpPolicy", env, seed=args.seed, device="cpu", verbose=1,
-                n_steps=512, batch_size=64, n_epochs=5,
-                policy_kwargs={"net_arch": [64, 64]}, learning_rate=3e-4)
-    callback = CheckpointCallback(save_freq=10_240, save_path=str(args.output),
-                                  save_vecnormalize=True)
+    env = DummyVecEnv([lambda: Monitor(FlightEnv(args.seed))])
     try:
-        model.learn(total_timesteps=args.steps, callback=callback)
+        if args.resume:
+            env = VecNormalize.load(args.resume / "normalize.pkl", env)
+            env.training = True
+            env.norm_reward = True
+            model = PPO.load(args.resume / "policy.zip", env=env, device="cpu")
+            # Resume weights, optimizer, counters and running statistics, but
+            # begin a fresh seeded episode; simulator/RNG state is not saved.
+            model.set_random_seed(args.seed)
+        else:
+            env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10)
+            model = PPO("MlpPolicy", env, seed=args.seed, device="cpu", verbose=1,
+                        n_steps=512, batch_size=64, n_epochs=5,
+                        policy_kwargs={"net_arch": [64, 64]}, learning_rate=3e-4)
+        starting_steps = model.num_timesteps
+        callback = CheckpointCallback(save_freq=args.checkpoint_every,
+                                      save_path=str(args.output), save_vecnormalize=True)
+        model.learn(total_timesteps=args.steps, callback=callback,
+                    reset_num_timesteps=not bool(args.resume))
         model.save(args.output / "policy.zip")
         env.save(args.output / "normalize.pkl")
         (args.output / "training.json").write_text(json.dumps({
             "seed": args.seed, "requested_steps": args.steps,
             "actual_steps": model.num_timesteps, "algorithm": "PPO",
             "connectome": False,
+            "starting_steps": starting_steps,
+            "additional_steps": model.num_timesteps - starting_steps,
+            "resumed_from": str(args.resume) if args.resume else None,
+            "checkpoint_every": args.checkpoint_every,
         }, indent=2) + "\n")
     finally:
         env.close()
@@ -120,6 +141,9 @@ def main():
     training.add_argument("--steps", type=positive, default=1_000_000)
     training.add_argument("--seed", type=int, default=0)
     training.add_argument("--threads", type=positive, default=2)
+    training.add_argument("--resume", type=Path,
+                          help="Directory containing policy.zip and matching normalize.pkl")
+    training.add_argument("--checkpoint-every", type=positive, default=10_240)
     training.add_argument("--output", type=Path, default=Path("runs/train"))
     training.set_defaults(func=train)
     evaluation = sub.add_parser("evaluate", help="Evaluate PPO or the untrained baseline")

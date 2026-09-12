@@ -48,6 +48,11 @@ jobs:
         run: fly train --steps "$TRAIN_STEPS" --output runs/train
       - name: Reload and evaluate checkpoint on held-out seeds
         run: fly evaluate --checkpoint runs/train --episodes 3 --video --output runs/evaluation
+      - name: Verify resumed training and checkpoint pairs
+        run: |
+          fly train --resume runs/train --steps 512 --checkpoint-every 512 --output runs/resumed
+          python scripts/verify_resume.py runs/train runs/resumed
+          fly evaluate --checkpoint runs/resumed --episodes 1 --output runs/resumed-evaluation
       - uses: actions/upload-artifact@v4
         if: always()
         with:
