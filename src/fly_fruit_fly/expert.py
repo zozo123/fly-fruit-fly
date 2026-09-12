@@ -86,12 +86,22 @@ class OfficialFlightPolicy:
                 "Official expert evaluation needs the optional TensorFlow runtime. "
                 "Install with: pip install -e '.[expert]'"
             ) from exc
-        # TFP uses lazy imports. Importing its top-level package alone does not
-        # register Independent_ACTTypeSpec, which this SavedModel needs.
-        tfp.distributions.Independent(
-            tfp.distributions.Normal(tf.zeros([12]), tf.ones([12])),
-            reinterpreted_batch_ndims=1,
-        )
+        # Released TFP SavedModels used full Python module names. TFP 0.23
+        # registers the same compatible TypeSpecs under "tfp.distributions".
+        # Add deserialization aliases only; serialization and tensor math retain
+        # the current classes. This bridge is tied to the pinned expert runtime.
+        from tensorflow.python.framework import type_spec_registry
+        for distribution_cls in (
+            tfp.distributions.Independent, tfp.distributions.Normal,
+            tfp.distributions.MultivariateNormalDiag,
+        ):
+            modern = f"tfp.distributions.{distribution_cls.__name__}_ACTTypeSpec"
+            legacy = f"{distribution_cls.__module__}.{distribution_cls.__name__}_ACTTypeSpec"
+            spec = type_spec_registry.lookup(modern)
+            existing = type_spec_registry._NAME_TO_TYPE_SPEC.get(legacy)
+            if existing is not None and existing is not spec:
+                raise RuntimeError(f"Conflicting SavedModel TypeSpec alias: {legacy}")
+            type_spec_registry._NAME_TO_TYPE_SPEC[legacy] = spec
         self._tf = tf
         self._policy = tf.saved_model.load(str(policy_dir))
 
