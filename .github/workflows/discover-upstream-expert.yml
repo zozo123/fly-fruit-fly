@@ -16,8 +16,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install project and pinned Flybody
-        run: python -m pip install -e .
+      - name: Install pinned Flybody only
+        run: python -m pip install 'flybody @ git+https://github.com/TuragaLab/flybody.git@d015e9bfe441bd90ae431bac24c55cb74bdbce26'
       - name: Download official trained policies only
         run: |
           python - <<'PY'
