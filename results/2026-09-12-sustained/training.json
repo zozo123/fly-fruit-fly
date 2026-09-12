@@ -1,0 +1,13 @@
+{
+  "seed": 0,
+  "requested_steps": 65536,
+  "actual_steps": 73728,
+  "algorithm": "PPO",
+  "connectome": false,
+  "starting_steps": 8192,
+  "additional_steps": 65536,
+  "resumed_from": "results/2026-09-12-smoke",
+  "checkpoint_every": 10240,
+  "gamma": 0.999,
+  "gae_lambda": 0.99
+}

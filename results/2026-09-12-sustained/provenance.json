@@ -1,0 +1,16 @@
+{
+  "workflow_run_id": 34712024080,
+  "workflow_job_id": 103602380964,
+  "head_sha": "3eb7fc501895f59e53d853b9f594ad16b1baf17c",
+  "artifact_id": 10303364175,
+  "artifact_name": "sustained-flight-34712024080",
+  "artifact_digest": "sha256:2066e789d5328e964d97dd24e84ef57a0cd47af7416404ba9e0b7c3a68bd3e8a",
+  "artifact_file_sha256": {
+    "assessment.json": "1b66eb2c12beb5377008f9d9160a0ec53ee891368a854aefed31caf704d4615b",
+    "baseline.json": "0bd8c16c7b467bebfc358b142205d89bbb4b2cd7c8940f277e8d6acd46046d20",
+    "ppo.json": "2a5e8d82da018dd95bf25f5b60d302e10a8ffae66b8a1458e3a247c0fd54a984",
+    "training.json": "ed91c50f6875f8c713576063abeeb5dc19101a45925d51d395c21300129ce21a",
+    "environment.txt": "57064d17495fa8adede9768b4432a3ce852dd1d7ad24c91fb3090e896e0e1731"
+  },
+  "note": "Hashes above are for files inside the downloaded Actions artifact. baseline.json and ppo.json are committed here as JSON-normalized equivalents; their semantic content is verified by scripts/verify_results.py."
+}

@@ -69,6 +69,19 @@ class AssessmentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             assess(r, report())
 
+    def test_mismatched_controller_config_rejected(self):
+        candidate = report()
+        baseline = report()
+        candidate.update(control_mode="wings", action_repeat=10)
+        baseline.update(control_mode="wings", action_repeat=1)
+        with self.assertRaisesRegex(ValueError, "controller configurations"):
+            assess(candidate, baseline)
+
+    def test_legacy_controller_config_is_full_rate(self):
+        result = assess(report())
+        self.assertEqual(result["controller_config"],
+                         {"control_mode": "full", "action_repeat": 1})
+
     def test_inconsistent_flags_rejected(self):
         r = report()
         r["episodes"][0]["failed"] = True
