@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 from pathlib import Path
 import shutil
 import tempfile
@@ -72,6 +73,43 @@ def ensure_official_flight_policy(cache_dir: Path) -> Path:
             shutil.rmtree(target_root)
         shutil.move(str(temp_root / "flight"), str(policy_dir))
     return policy_dir
+
+WING_PATTERN_METADATA_URL = "https://api.figshare.com/v2/articles/25309105"
+
+
+def ensure_official_wing_pattern(cache_dir: Path) -> Path:
+    """Fetch the exact named wingbeat asset used by the upstream notebook."""
+    cache_dir = Path(cache_dir).expanduser().resolve()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = cache_dir / "wing_pattern_fmech.npy"
+    manifest_path = cache_dir / "wing_pattern_fmech.json"
+    if path.is_file() and manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text())
+        if hashlib.sha256(path.read_bytes()).hexdigest() == manifest["sha256"]:
+            return path
+    with urllib.request.urlopen(WING_PATTERN_METADATA_URL, timeout=60) as response:
+        metadata = json.load(response)
+    matches = [f for f in metadata["files"] if f["name"] == path.name]
+    if len(matches) != 1:
+        raise RuntimeError(f"Expected exactly one {path.name}; available: "
+                           f"{[f['name'] for f in metadata['files']]}")
+    record = matches[0]
+    with urllib.request.urlopen(record["download_url"], timeout=60) as response:
+        payload = response.read(1_048_577)
+    expected_md5 = record.get("computed_md5") or record.get("supplied_md5")
+    if (len(payload) > 1_048_576 or len(payload) != record["size"] or
+            not expected_md5 or hashlib.md5(payload).hexdigest() != expected_md5):
+        raise RuntimeError("Official wing-pattern integrity check failed")
+    pattern = np.load(io.BytesIO(payload), allow_pickle=False)
+    if pattern.ndim != 2 or pattern.shape[1] != 3 or not np.isfinite(pattern).all():
+        raise RuntimeError("Official wing-pattern shape/values are invalid")
+    path.write_bytes(payload)
+    manifest_path.write_text(json.dumps({
+        "article": WING_PATTERN_METADATA_URL, "article_version": metadata.get("version"),
+        "file_id": record["id"], "download_url": record["download_url"],
+        "sha256": hashlib.sha256(payload).hexdigest(), "md5": expected_md5,
+    }, indent=2) + "\n")
+    return path
 
 
 class OfficialFlightPolicy:

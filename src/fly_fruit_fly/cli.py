@@ -140,8 +140,13 @@ def evaluate(args):
     control_mode = control_mode or "full"
     action_repeat = action_repeat or 1
 
+    wing_pattern = None
+    if args.expert:
+        from .expert import ensure_official_wing_pattern
+        wing_pattern = ensure_official_wing_pattern(args.expert_cache)
     env = FlightEnv(render_mode="rgb_array" if args.video else None,
-                    control_mode=control_mode, action_repeat=action_repeat)
+                    control_mode=control_mode, action_repeat=action_repeat,
+                    wpg_pattern_path=wing_pattern)
     model = normalizer = expert_policy = writer = trace = None
     episodes = []
     capture_stride = realized_slowdown = None
@@ -187,7 +192,11 @@ def evaluate(args):
                 writer.append_data(env.render())
             while not (terminated or truncated):
                 if expert_policy is not None:
-                    action = expert_policy.predict(env.raw_observation)
+                    canonical = expert_policy.predict(env.raw_observation)
+                    # Match upstream's CanonicalSpecWrapper: [-1, 1] policy
+                    # outputs must be mapped to the native actuator bounds.
+                    action = (env.action_space.low + 0.5 * (np.clip(canonical, -1, 1) + 1)
+                              * (env.action_space.high - env.action_space.low))
                 elif model is not None:
                     action, _ = model.predict(normalizer.normalize_obs(obs.copy()),
                                               deterministic=True)
@@ -223,12 +232,17 @@ def evaluate(args):
         report = {
             "schema_version": 5,
             "task": {"name": "flybody_straight_flight", "speed_cm_s": 20,
-                     "initial_height_cm": 1, "reference_duration_s": 0.6},
+                     "initial_height_cm": 1, "reference_duration_s": 0.6,
+                     "wing_pattern": "official_fmech" if wing_pattern else "approximation"},
             "controller": controller,
             "control_mode": control_mode,
             "action_repeat": action_repeat,
             "policy_interval_s": env.agent_dt,
             "checkpoint": str(args.checkpoint) if args.checkpoint else None,
+            "wing_pattern_provenance": (
+                json.loads(wing_pattern.with_suffix(".json").read_text())
+                if wing_pattern else None
+            ),
             "expert_source": (
                 "https://janelia.figshare.com/ndownloader/files/44815195"
                 if expert_policy is not None else None

@@ -34,7 +34,8 @@ def video_capture_stride(control_timestep_s, fps=50, slowdown=10):
 class FlightEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 50}
 
-    def __init__(self, seed=0, render_mode=None, control_mode="full", action_repeat=1):
+    def __init__(self, seed=0, render_mode=None, control_mode="full", action_repeat=1,
+                 wpg_pattern_path=None):
         from flybody.fly_envs import flight_imitation
         from flybody.tasks.synthetic_trajectories import constant_speed_trajectory
 
@@ -46,7 +47,8 @@ class FlightEnv(gym.Env):
         self.action_repeat = action_repeat
         self.render_mode = render_mode
         self._rng = np.random.RandomState(seed)
-        self._env = flight_imitation(random_state=self._rng)
+        self._env = flight_imitation(random_state=self._rng,
+                                    wpg_pattern_path=wpg_pattern_path)
         self.dt = self._env.control_timestep()
         self.agent_dt = self.dt * self.action_repeat
         # Upstream's default synthetic reference lasts only 40 ms. Supply the
