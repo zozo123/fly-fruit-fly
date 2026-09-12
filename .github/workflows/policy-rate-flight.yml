@@ -1,4 +1,4 @@
-name: Policy-rate flight experiment
+name: PPO wing-only ablation
 on:
   push:
     branches: [main]
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       steps:
-        description: Fresh PPO policy steps at the 2 ms policy interval
+        description: Fresh PPO steps for the 7-D wing-only 2 ms ablation
         default: '8192'
         required: true
 
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: policy-rate-flight
+  group: ppo-wing-only-ablation
   cancel-in-progress: false
 
 jobs:
@@ -40,11 +40,11 @@ jobs:
           python -m pip freeze > environment.txt
           python scripts/verify_results.py
           pytest -q
-      - name: Measure matched wing-controller baseline
+      - name: Measure matched 7-D wing-only baseline
         run: fly evaluate --control-mode wings --action-repeat 10 --episodes 10 --seed 30000 --output runs/baseline
-      - name: Train wing-focused controller at 2 ms policy rate
+      - name: Train 7-D wing-only PPO ablation at 2 ms
         run: fly train --control-mode wings --action-repeat 10 --steps "$TRAIN_STEPS" --gamma 0.99 --gae-lambda 0.95 --checkpoint-every 2048 --output runs/candidate
-      - name: Evaluate candidate on the same held-out phases
+      - name: Evaluate ablation on the same held-out phases
         run: fly evaluate --checkpoint runs/candidate --episodes 10 --seed 30000 --video --output runs/evaluation
       - name: Record task acceptance result
         run: |
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: policy-rate-flight-${{ github.run_id }}
+          name: ppo-wing-only-ablation-${{ github.run_id }}
           path: |
             runs/
             environment.txt
