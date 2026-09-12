@@ -67,8 +67,15 @@ def verify_sustained():
     assert assessment["passing_episodes"] == 0 and assessment["pass_rate"] == 0
     for key, value in cand.items():
         assert abs(assessment[key] - value) < 1e-12
-    for key, value in assessment["paired_mean_delta"].items():
-        assert abs(value - (cand[key] - base[key])) < 1e-12
+
+    paired_summary_keys = {
+        "duration_s": "mean_duration_s",
+        "return": "mean_return",
+        "mean_tracking_error_cm": "mean_episode_tracking_error_cm",
+    }
+    for episode_key, value in assessment["paired_mean_delta"].items():
+        summary_key = paired_summary_keys[episode_key]
+        assert abs(value - (cand[summary_key] - base[summary_key])) < 1e-12
 
     assert training == {
         "seed": 0,
