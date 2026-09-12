@@ -19,11 +19,12 @@ jobs:
       - name: Download and unpack official trained policies only
         run: |
           python - <<'PY'
-          import io, urllib.request, zipfile
+          import hashlib, io, urllib.request, zipfile
           url = 'https://janelia.figshare.com/ndownloader/files/44815195'
           with urllib.request.urlopen(url, timeout=120) as response:
               payload = response.read()
           print(f'downloaded {len(payload):,} bytes')
+          print('archive sha256:', hashlib.sha256(payload).hexdigest())
           with zipfile.ZipFile(io.BytesIO(payload)) as archive:
               archive.extractall('upstream-data')
           PY
@@ -34,11 +35,6 @@ jobs:
           echo '```text' >> "$GITHUB_STEP_SUMMARY"
           cat policy-files.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo '--- text metadata ---'
-          find upstream-data -type f \( -iname 'readme*' -o -iname '*.txt' -o -iname '*.json' -o -iname '*.yaml' -o -iname '*.yml' \) -print0 | while IFS= read -r -d '' f; do
-            echo "===== $f ====="
-            head -200 "$f" || true
-          done
       - uses: actions/upload-artifact@v4
         with:
           name: upstream-policy-inventory
