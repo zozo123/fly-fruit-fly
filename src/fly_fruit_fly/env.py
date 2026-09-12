@@ -21,11 +21,7 @@ def end_flags(timestep):
 
 
 def video_capture_stride(control_timestep_s, fps=50, slowdown=10):
-    """Return frame stride and realized slowdown for simulator video capture.
-
-    A 2 ms control step rendered at 50 fps must record every control step to play
-    10x slower than simulated time. Recording every tenth step would be real time.
-    """
+    """Return frame stride and realized slowdown for simulator video capture."""
     values = (control_timestep_s, fps, slowdown)
     if any(not np.isfinite(v) or v <= 0 for v in values):
         raise ValueError("control timestep, fps, and slowdown must be positive and finite")
