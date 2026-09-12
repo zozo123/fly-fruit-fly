@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fly-fruit-fly"
+version = "0.1.0"
+description = "A minimal, measurable flight-learning baseline for Flybody"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "flybody @ git+https://github.com/TuragaLab/flybody.git@d015e9bfe441bd90ae431bac24c55cb74bdbce26",
+  "gymnasium==1.0.0",
+  "stable-baselines3==2.4.1",
+  "torch>=2.3,<2.7",
+  "imageio[ffmpeg]>=2.34,<3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+fly = "fly_fruit_fly.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

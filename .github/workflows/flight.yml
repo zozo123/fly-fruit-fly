@@ -1,0 +1,58 @@
+name: Flight baseline
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: PPO training steps (rounded up to a 512-step rollout)
+        default: '1000000'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flight:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      MUJOCO_GL: egl
+      PYOPENGL_PLATFORM: egl
+      OMP_NUM_THREADS: '2'
+      TRAIN_STEPS: ${{ inputs.steps || '8192' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install renderer and CPU training dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1-mesa libgl1-mesa-dri ffmpeg
+          python -m pip install --upgrade pip
+          python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e '.[dev]'
+          python -m pip freeze > environment.txt
+      - name: Test actual simulator
+        run: python -m pytest -q
+      - name: Measure untrained wingbeat baseline
+        run: fly evaluate --episodes 3 --video --output runs/baseline
+      - name: Train a small PPO controller
+        run: fly train --steps "$TRAIN_STEPS" --output runs/train
+      - name: Reload and evaluate checkpoint on held-out seeds
+        run: fly evaluate --checkpoint runs/train --episodes 3 --video --output runs/evaluation
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flight-baseline-${{ github.sha }}
+          path: |
+            runs/
+            environment.txt
+          retention-days: 14
