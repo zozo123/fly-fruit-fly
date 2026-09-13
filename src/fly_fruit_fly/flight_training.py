@@ -148,6 +148,13 @@ def teacher_mix_beta(round_index: int, *, start: float = 0.8, floor: float = 0.1
     return float(max(floor, start * (0.72 ** round_index)))
 
 
+def training_rounds_complete(round_index: int, rounds: int) -> bool:
+    """Stop only after the configured DAgger budget, never on a tiny validation panel."""
+    if round_index < 0 or rounds < 0:
+        raise ValueError("round indices must be non-negative")
+    return round_index >= rounds
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, default=Path("runs/flight-student"))
@@ -213,6 +220,7 @@ def main():
         "normalization": "fixed after initial expert demonstrations",
         "transient_weighting": {"steps": 400, "initial_boost": 4.0},
         "teacher_mix_schedule": "max(0.15, 0.8 * 0.72**round)",
+        "training_round_policy": "run every configured DAgger round; promotion selects checkpoints only",
         "validation_protocol": protocol,
         "expert_actions_at_evaluation": False,
         "rl_steps": 0,
@@ -277,7 +285,7 @@ def main():
             save_cape_checkpoint(policy, graph, args.output / "student.pt", manifest)
         (args.output / "training.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
-        if best_score[0] == len(protocol["round_promotion_seeds"]) or round_index == args.rounds:
+        if training_rounds_complete(round_index, args.rounds):
             break
 
         beta = teacher_mix_beta(round_index)
