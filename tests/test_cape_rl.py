@@ -1,3 +1,5 @@
+"""Regression tests for conservative CAPE PPO refinement."""
+
 import copy
 import math
 
@@ -12,17 +14,22 @@ from fly_fruit_fly.cape_rl import (
 
 
 class DummyPolicy:
+    """Minimal policy surface needed to test exploration configuration."""
+
     def __init__(self):
         self.log_std = torch.nn.Parameter(torch.full((12,), -1.5))
 
 
 class ScalarModule(torch.nn.Module):
+    """One-parameter module that makes trust-region rollback deterministic."""
+
     def __init__(self):
         super().__init__()
         self.value = torch.nn.Parameter(torch.tensor(0.0))
 
 
 def test_conservative_exploration_std_is_explicit_and_bounded():
+    """CAPE should use a small valid raw-action exploration scale."""
     policy = DummyPolicy()
     assert set_exploration_std(policy, 0.05) == pytest.approx(0.05)
     assert torch.allclose(
@@ -36,6 +43,7 @@ def test_conservative_exploration_std_is_explicit_and_bounded():
 
 
 def test_zero_step_anchored_ppo_is_a_noop_without_environment_access():
+    """A disabled RL budget must not mutate the imitation controller."""
     policy = DummyPolicy()
     assert anchored_ppo_finetune(
         policy,
@@ -47,6 +55,7 @@ def test_zero_step_anchored_ppo_is_a_noop_without_environment_access():
 
 
 def test_kl_guard_rolls_back_model_and_optimizer_after_oversized_step():
+    """An update crossing the KL boundary must be rejected transactionally."""
     model = ScalarModule()
     optimizer = torch.optim.Adam(model.parameters(), lr=1.0)
     before_model = copy.deepcopy(model.state_dict())
@@ -68,6 +77,7 @@ def test_kl_guard_rolls_back_model_and_optimizer_after_oversized_step():
 
 
 def test_kl_guard_refuses_already_out_of_bounds_policy_without_mutation():
+    """An already-invalid policy must not receive one additional optimizer step."""
     model = ScalarModule()
     with torch.no_grad():
         model.value.fill_(0.2)
