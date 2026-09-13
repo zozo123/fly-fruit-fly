@@ -123,6 +123,14 @@ def _routing_reachability(
     }
 
 
+def _require_routed_path(reachability: dict) -> None:
+    """Reject CAPE graphs where biological inputs cannot reach any routed output."""
+    if int(reachability.get("reachable_output_nodes", 0)) <= 0:
+        raise RuntimeError(
+            "CAPE graph has no directed path from routed biological inputs to outputs"
+        )
+
+
 def materialize_cape_subgraph(
     cache_dir: Path,
     output: Path,
@@ -228,6 +236,7 @@ def materialize_cape_subgraph(
     reachability = _routing_reachability(
         len(selected_array), edge_src, edge_dst, input_mask, output_mask
     )
+    _require_routed_path(reachability)
 
     metadata = {
         "kind": "banc_cape_closed_loop_structural_prior",
