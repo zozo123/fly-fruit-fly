@@ -6,6 +6,7 @@ from fly_fruit_fly.circuit import (
     CAPE_ARCHITECTURE,
     CapeSuperFlyPolicy,
     _require_routed_path,
+    _routing_reachability,
     balanced_role_nodes,
     load_cape_checkpoint,
     save_cape_checkpoint,
@@ -64,6 +65,20 @@ def test_cape_requires_a_directed_path_from_inputs_to_outputs():
         _require_routed_path({"reachable_output_nodes": 0})
 
 
+def test_cape_reachability_does_not_accept_zero_hop_role_overlap():
+    summary = _routing_reachability(
+        2,
+        np.array([], dtype=np.int64),
+        np.array([], dtype=np.int64),
+        np.array([True, False]),
+        np.array([True, False]),
+    )
+    assert summary["reachable_output_nodes"] == 0
+    assert summary["minimum_input_to_output_hops"] is None
+    with pytest.raises(RuntimeError, match="no directed path"):
+        _require_routed_path(summary)
+
+
 def test_cape_policy_rejects_disconnected_role_routing():
     graph = ConnectomeGraph(
         node_ids=np.arange(100, 104, dtype=np.int64),
@@ -114,8 +129,11 @@ def test_cape_keeps_measured_adjacency_fixed_but_learns_neuron_dynamics():
     assert policy.adjacency.is_sparse
     assert not any(name == "adjacency" for name, _ in policy.named_parameters())
     assert any(name == "source_gain" for name, _ in policy.named_parameters())
-    assert policy.routing_summary()["architecture"] == CAPE_ARCHITECTURE
-    assert policy.routing_summary()["circuit_substeps"] == 4
+    summary = policy.routing_summary()
+    assert summary["architecture"] == CAPE_ARCHITECTURE
+    assert summary["circuit_substeps"] == 4
+    assert summary["reachability"]["reachable_output_nodes"] > 0
+    assert summary["reachability"]["minimum_input_to_output_hops"] >= 1
 
 
 def test_cape_checkpoint_roundtrip_preserves_routed_behavior(tmp_path):
