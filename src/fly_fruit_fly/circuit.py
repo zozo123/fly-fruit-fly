@@ -94,7 +94,7 @@ def _routing_reachability(
     input_mask: np.ndarray,
     output_mask: np.ndarray,
 ) -> dict:
-    """Summarize directed paths from routed input neurons to routed output neurons."""
+    """Summarize positive-hop directed paths from routed inputs to routed outputs."""
     adjacency = [[] for _ in range(n_nodes)]
     for src, dst in zip(edge_src, edge_dst):
         adjacency[int(src)].append(int(dst))
@@ -112,7 +112,7 @@ def _routing_reachability(
             distance[neighbor] = distance[node] + 1
             queue.append(neighbor)
     output_indices = np.flatnonzero(output_mask)
-    reachable = output_indices[distance[output_indices] >= 0]
+    reachable = output_indices[distance[output_indices] > 0]
     hops = distance[reachable]
     return {
         "input_nodes": int(input_mask.sum()),
@@ -305,6 +305,7 @@ class CapeSuperFlyPolicy(SuperFlyPolicy):
             output_mask = np.ones(graph.n_nodes, dtype=bool)
         if strict_role_routing and (not input_mask.any() or not output_mask.any()):
             raise ValueError("CAPE requires non-empty BANC input and output role masks")
+        self._routing_reachability = None
         if strict_role_routing:
             reachability = _routing_reachability(
                 graph.n_nodes,
@@ -314,6 +315,7 @@ class CapeSuperFlyPolicy(SuperFlyPolicy):
                 output_mask,
             )
             _require_routed_path(reachability)
+            self._routing_reachability = reachability
 
         self.register_buffer(
             "input_role_mask", torch.as_tensor(input_mask, dtype=torch.float32), persistent=False
@@ -331,7 +333,7 @@ class CapeSuperFlyPolicy(SuperFlyPolicy):
         return state * self.output_role_mask
 
     def routing_summary(self) -> dict:
-        return {
+        summary = {
             "architecture": CAPE_ARCHITECTURE,
             "circuit_substeps": self.circuit_substeps,
             "input_nodes": int(self.input_role_mask.sum().item()),
@@ -341,6 +343,9 @@ class CapeSuperFlyPolicy(SuperFlyPolicy):
             "recurrent_topology": "fixed BANC v888 measured edges",
             "recurrent_source_gain": "learned bounded engineering dynamics",
         }
+        if self._routing_reachability is not None:
+            summary["reachability"] = dict(self._routing_reachability)
+        return summary
 
     def step(self, obs: torch.Tensor, state: torch.Tensor):
         if obs.ndim == 1:
