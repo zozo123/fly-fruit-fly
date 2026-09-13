@@ -511,6 +511,15 @@ def evaluate(
     return metrics
 
 
+def set_motor_hidden(policy: SuperFlyPolicy, hidden: int) -> None:
+    """Add nonlinear motor decoding while retaining the connectome recurrent core."""
+    if hidden <= 0:
+        raise ValueError("Motor hidden width must be positive")
+    policy.motor = nn.Sequential(nn.Linear(policy.n_nodes, hidden), nn.Tanh(),
+                                 nn.Linear(hidden, policy.action_dim))
+    policy.motor_hidden = hidden
+
+
 def save_checkpoint(policy: SuperFlyPolicy, graph: ConnectomeGraph, output: Path, training: dict):
     graph.validate()
     _check_graph_adjacency(policy.adjacency, graph)
@@ -519,6 +528,7 @@ def save_checkpoint(policy: SuperFlyPolicy, graph: ConnectomeGraph, output: Path
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save({
         "graph_node_ids": torch.as_tensor(graph.node_ids.copy(), dtype=torch.int64),
+        "motor_hidden": getattr(policy, "motor_hidden", 0),
         "state_dict": policy.state_dict(),
         "obs_dim": policy.obs_dim,
         "action_low": policy.action_low.cpu(),
@@ -561,6 +571,8 @@ def load_checkpoint(checkpoint: Path, graph: ConnectomeGraph) -> SuperFlyPolicy:
         np.asarray(data["action_low"], dtype=np.float32),
         np.asarray(data["action_high"], dtype=np.float32),
     )
+    if data.get("motor_hidden", 0):
+        set_motor_hidden(policy, int(data["motor_hidden"]))
     policy.load_state_dict(data["state_dict"])
     policy.eval()
     return policy
