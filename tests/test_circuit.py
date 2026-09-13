@@ -5,6 +5,7 @@ import torch
 from fly_fruit_fly.circuit import (
     CAPE_ARCHITECTURE,
     CapeSuperFlyPolicy,
+    _require_routed_path,
     balanced_role_nodes,
     load_cape_checkpoint,
     save_cape_checkpoint,
@@ -55,6 +56,12 @@ def test_balanced_role_nodes_represents_available_roles_deterministically():
     second = balanced_role_nodes(roles, scores, 5)
     assert first == second
     assert set(first) == {2, 3, 4, 5, 6}
+
+
+def test_cape_requires_a_directed_path_from_inputs_to_outputs():
+    _require_routed_path({"reachable_output_nodes": 1})
+    with pytest.raises(RuntimeError, match="no directed path"):
+        _require_routed_path({"reachable_output_nodes": 0})
 
 
 def test_cape_routes_observations_only_into_input_roles_on_first_substep():
