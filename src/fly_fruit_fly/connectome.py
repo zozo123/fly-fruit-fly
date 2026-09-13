@@ -132,8 +132,72 @@ def _string_array(column) -> np.ndarray:
     return pc.fill_null(column, "").to_numpy(zero_copy_only=False).astype(str)
 
 
-def _metadata_seed_ids(meta_path: Path) -> set[int]:
-    """Select measured motor/descending/flight-related BANC neurons as seeds."""
+def _normalized_strings(values, length: int) -> np.ndarray:
+    """Normalize optional BANC annotation columns for deterministic role tests."""
+    if values is None:
+        return np.full(length, "", dtype=str)
+    array = np.asarray(values).astype(str)
+    if array.shape != (length,):
+        raise ValueError("BANC role columns must have the same length as root_ids")
+    return np.char.lower(array)
+
+
+def classify_banc_roles(
+    root_ids,
+    *,
+    flow=None,
+    super_class=None,
+    cell_function=None,
+    cell_class=None,
+    cell_type=None,
+) -> dict[str, set[int]]:
+    """Classify BANC neurons into explicit biological I/O and flight-control roles.
+
+    BANC's controlled vocabulary distinguishes peripheral afferents/efferents from
+    ascending/descending CNS relays. Keeping these categories separate gives a
+    future controller a principled way to inject observations and read motor output
+    without treating every selected neuron as a generic dense I/O unit.
+    """
+    roots = np.asarray(root_ids, dtype=np.int64)
+    if roots.ndim != 1:
+        raise ValueError("root_ids must be one-dimensional")
+    n = len(roots)
+    flow_values = _normalized_strings(flow, n)
+    super_values = _normalized_strings(super_class, n)
+    function_values = _normalized_strings(cell_function, n)
+    class_values = _normalized_strings(cell_class, n)
+    type_values = _normalized_strings(cell_type, n)
+
+    sensory = (flow_values == "afferent") | (super_values == "sensory")
+    motor = (flow_values == "efferent") | (super_values == "motor")
+    ascending = super_values == "ascending"
+    descending = super_values == "descending"
+
+    flight = np.zeros(n, dtype=bool)
+    for values in (function_values, class_values, type_values):
+        for keyword in ("flight", "wing", "haltere", "neck", "steering"):
+            flight |= np.char.find(values, keyword) >= 0
+
+    # Preserve the existing motor/descending-centered graph-selection semantics.
+    # Sensory/ascending identities are recorded, not automatically promoted into
+    # the selected subgraph; that policy choice can be evaluated explicitly.
+    selection_seed = motor | descending | flight
+
+    def ids(mask):
+        return set(map(int, roots[mask]))
+
+    return {
+        "sensory_input": ids(sensory),
+        "motor_output": ids(motor),
+        "ascending": ids(ascending),
+        "descending": ids(descending),
+        "flight_annotated": ids(flight),
+        "selection_seed": ids(selection_seed),
+    }
+
+
+def _metadata_role_ids(meta_path: Path) -> dict[str, set[int]]:
+    """Read BANC v888 metadata once and classify biologically meaningful roles."""
     feather = _feather()
     schema = feather.read_table(meta_path, memory_map=True).schema
     names = set(schema.names)
@@ -142,28 +206,38 @@ def _metadata_seed_ids(meta_path: Path) -> set[int]:
         raise RuntimeError("BANC metadata has neither root_id nor root_888")
 
     requested = [root_name]
-    for candidate in ("super_class", "flow", "cell_function", "cell_class", "cell_type"):
+    for candidate in ("flow", "super_class", "cell_function", "cell_class", "cell_type"):
         if candidate in names:
             requested.append(candidate)
     table = feather.read_table(meta_path, columns=requested, memory_map=True)
     roots = table[root_name].to_numpy(zero_copy_only=False).astype(np.int64, copy=False)
-    selected = np.zeros(len(roots), dtype=bool)
 
-    if "super_class" in requested:
-        values = np.char.lower(_string_array(table["super_class"]))
-        selected |= np.isin(values, ["descending", "motor", "efferent"])
-    if "flow" in requested:
-        values = np.char.lower(_string_array(table["flow"]))
-        selected |= values == "efferent"
+    values = {}
+    for name in ("flow", "super_class", "cell_function", "cell_class", "cell_type"):
+        values[name] = _string_array(table[name]) if name in requested else None
+    return classify_banc_roles(roots, **values)
 
-    keywords = ("flight", "wing", "haltere", "neck", "steering")
-    for column in ("cell_function", "cell_class", "cell_type"):
-        if column not in requested:
-            continue
-        lowered = np.char.lower(_string_array(table[column]))
-        for keyword in keywords:
-            selected |= np.char.find(lowered, keyword) >= 0
-    return set(map(int, roots[selected]))
+
+def _metadata_seed_ids(meta_path: Path) -> set[int]:
+    """Select measured motor/descending/flight-related BANC neurons as seeds."""
+    return _metadata_role_ids(meta_path)["selection_seed"]
+
+
+def graph_role_mask(graph: ConnectomeGraph, role: str) -> np.ndarray:
+    """Return a boolean node mask for a role recorded in graph provenance.
+
+    Old committed graphs predate role provenance and intentionally raise instead of
+    silently inventing biological labels. This keeps replay compatibility separate
+    from new role-aware experiments.
+    """
+    roles = graph.metadata.get("roles")
+    if not isinstance(roles, dict):
+        raise ValueError("connectome graph has no recorded BANC role provenance")
+    key = f"{role}_node_ids"
+    if key not in roles:
+        raise ValueError(f"connectome graph has no recorded role {role!r}")
+    role_ids = np.asarray(roles[key], dtype=np.int64)
+    return np.isin(graph.node_ids, role_ids)
 
 
 def materialize_banc_subgraph(
@@ -196,7 +270,8 @@ def materialize_banc_subgraph(
     keep = np.isfinite(count) & np.isfinite(norm) & (count >= min_synapses) & (norm > 0)
     pre, post, count, norm = pre[keep], post[keep], count[keep], norm[keep]
 
-    seed_ids = _metadata_seed_ids(meta_path)
+    role_ids = _metadata_role_ids(meta_path)
+    seed_ids = role_ids["selection_seed"]
     seed_array = np.fromiter(seed_ids, dtype=np.int64) if seed_ids else np.empty(0, dtype=np.int64)
     incident = (np.isin(pre, seed_array) | np.isin(post, seed_array)) if seed_ids else np.ones(pre.shape, bool)
     p, q, c = pre[incident], post[incident], count[incident]
@@ -231,6 +306,13 @@ def materialize_banc_subgraph(
     edge_src = np.fromiter((node_to_index[int(x)] for x in ipre), dtype=np.int64)
     edge_dst = np.fromiter((node_to_index[int(x)] for x in ipost), dtype=np.int64)
     edge_weight = iweight.astype(np.float32, copy=False)
+
+    selected_set = set(map(int, selected))
+    selected_roles = {
+        name: sorted(selected_set.intersection(ids))
+        for name, ids in role_ids.items()
+        if name != "selection_seed"
+    }
     metadata = {
         "kind": "banc_connectome_structural_prior",
         "source": source_manifest,
@@ -240,9 +322,19 @@ def materialize_banc_subgraph(
             "n_edges": int(edge_src.size),
             "min_synapses": min_synapses,
             "seed_neurons_available": len(seed_ids),
-            "seed_rule": "BANC motor/descending/efferent/flight annotations + strongest measured partners",
+            "seed_rule": "BANC motor/efferent + descending + flight annotations + strongest measured partners",
             "weight": "BANC input-normalized synaptic weight (norm)",
             "synapse_count_sum": float(icount.sum()),
+        },
+        "roles": {
+            "sensory_input_node_ids": selected_roles["sensory_input"],
+            "motor_output_node_ids": selected_roles["motor_output"],
+            "ascending_node_ids": selected_roles["ascending"],
+            "descending_node_ids": selected_roles["descending"],
+            "flight_annotated_node_ids": selected_roles["flight_annotated"],
+            "sensory_rule": "flow=afferent OR super_class=sensory",
+            "motor_rule": "flow=efferent OR super_class=motor",
+            "relay_rule": "super_class=ascending/descending recorded separately",
         },
     }
     graph = ConnectomeGraph(selected, edge_src, edge_dst, edge_weight, metadata)
