@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import torch
 
 from .connectome import degree_preserving_shuffle, materialize_banc_subgraph, save_graph
 from .superfly import (
@@ -118,6 +119,7 @@ def _rollout_summary(rollouts) -> dict:
 
 def train_curriculum(args):
     """Train one measured- or shuffled-connectome SuperFly with corrective imitation."""
+    torch.manual_seed(args.seed)
     if args.output.exists() and any(args.output.iterdir()):
         raise ValueError("Output directory must be empty; choose a new run directory")
     args.output.mkdir(parents=True, exist_ok=True)

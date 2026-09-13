@@ -285,6 +285,11 @@ def _compute_gae(rewards, values, dones, next_value, gamma=0.999, gae_lambda=0.9
     return advantages, advantages + values
 
 
+def _bootstrap_reward(reward, *, terminated, truncated, next_value, gamma):
+    """Bootstrap time limits while keeping GAE from crossing episode resets."""
+    return float(reward) + (gamma * float(next_value) if truncated and not terminated else 0.0)
+
+
 def ppo_finetune(
     policy: SuperFlyPolicy,
     *,
@@ -325,6 +330,15 @@ def ppo_finetune(
                     logp = distribution.log_prob(raw).sum(-1)
                     action = policy.action_from_raw(raw)[0].cpu().numpy()
                 next_obs, reward, terminated, truncated, _ = env.step(action)
+                if truncated and not terminated:
+                    with torch.no_grad():
+                        _, terminal_value, _ = policy.step(
+                            torch.as_tensor(next_obs, dtype=torch.float32), next_state
+                        )
+                    reward = _bootstrap_reward(
+                        reward, terminated=terminated, truncated=truncated,
+                        next_value=float(terminal_value[0]), gamma=gamma,
+                    )
                 done = bool(terminated or truncated)
                 obs_buf.append(obs.copy())
                 state_buf.append(state_before[0].cpu().numpy())
@@ -520,6 +534,7 @@ def load_checkpoint(checkpoint: Path, graph: ConnectomeGraph) -> SuperFlyPolicy:
 
 
 def train_command(args):
+    torch.manual_seed(args.seed)
     if args.output.exists() and any(args.output.iterdir()):
         raise ValueError("Output directory must be empty; choose a new run directory")
     args.output.mkdir(parents=True, exist_ok=True)

@@ -12,6 +12,7 @@ from fly_fruit_fly.curriculum import dagger_betas
 from fly_fruit_fly.superfly import (
     SuperFlyPolicy,
     _compute_gae,
+    _bootstrap_reward,
     canonical_to_native,
     distill,
 )
@@ -125,3 +126,25 @@ def test_gae_is_finite_and_propagates_terminal_reward_backwards():
     assert advantages[0] > 0
     assert advantages[1] > advantages[0]
     assert advantages[2] == 1.0
+
+
+def test_time_limit_bootstraps_without_leaking_across_reset():
+    adjusted = _bootstrap_reward(1.0, terminated=False, truncated=True,
+                                 next_value=10.0, gamma=0.9)
+    advantages, _ = _compute_gae(
+        np.array([adjusted, 1000.0]), np.zeros(2),
+        np.array([True, True]), next_value=0.0, gamma=0.9,
+    )
+    assert advantages[0] == pytest.approx(10.0)
+    assert _bootstrap_reward(1.0, terminated=True, truncated=False,
+                             next_value=10.0, gamma=0.9) == 1.0
+
+
+def test_seeded_initialization_replays_exactly():
+    def initialize(seed):
+        torch.manual_seed(seed)
+        return SuperFlyPolicy(toy_graph(), 4, -np.ones(12), np.ones(12))
+    first, second = initialize(1234), initialize(1234)
+    a, _ = first.predict(np.ones(4, dtype=np.float32))
+    b, _ = second.predict(np.ones(4, dtype=np.float32))
+    np.testing.assert_array_equal(a, b)
