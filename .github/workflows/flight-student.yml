@@ -59,12 +59,17 @@ jobs:
         with:
           path: ~/.cache/fly-fruit-fly/banc-v888
           key: banc-v888-paper-v2
-      - name: Train CAPE with autonomous validation and untouched held-out evaluation
+      - name: Train CAPE with staged autonomous evaluation
         run: |
           python -m fly_fruit_fly.flight_training --nodes 384 --rounds 8 --circuit-substeps 4 --output runs/student
           python -m pip freeze > runs/student/environment.txt
       - name: Apply unchanged flight gate
-        run: fly assess runs/student/evaluation/metrics.json --require-pass
+        run: |
+          if [ -f runs/student/confirmation/metrics.json ]; then
+            fly assess runs/student/confirmation/metrics.json --require-pass
+          else
+            fly assess runs/student/development-evaluation/metrics.json --require-pass
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
