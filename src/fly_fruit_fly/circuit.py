@@ -305,6 +305,15 @@ class CapeSuperFlyPolicy(SuperFlyPolicy):
             output_mask = np.ones(graph.n_nodes, dtype=bool)
         if strict_role_routing and (not input_mask.any() or not output_mask.any()):
             raise ValueError("CAPE requires non-empty BANC input and output role masks")
+        if strict_role_routing:
+            reachability = _routing_reachability(
+                graph.n_nodes,
+                graph.edge_src,
+                graph.edge_dst,
+                input_mask,
+                output_mask,
+            )
+            _require_routed_path(reachability)
 
         self.register_buffer(
             "input_role_mask", torch.as_tensor(input_mask, dtype=torch.float32), persistent=False
