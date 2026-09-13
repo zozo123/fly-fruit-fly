@@ -4,12 +4,20 @@
     "expert-preview.gif": "6354e30d33f598f015084825ddf78209dad14b0c2145f3b4c5891d0be6c81686",
     "superfly-student.mp4": "7e320b6ac10cf65c50bfa14d7da902fcd1f8dd61218adbfffdcce775038250df",
     "autonomous-student.mp4": "17a6806cb87c4ae239d5b23b11b80c9413b21c5b68afe9adb70825a1aef28fac",
-    "nonlinear-first-seed.mp4": "ad70f6bd25bda291d6c95e9fda8b423ce3e29116677cc2d49b88f0730102c07f"
+    "nonlinear-first-seed.mp4": "ad70f6bd25bda291d6c95e9fda8b423ce3e29116677cc2d49b88f0730102c07f",
+    "connectome-flight.mp4": "892423bae1faf0e26dc0053a42a9261952f640521232b7aae26597c7a3e54e7b",
+    "connectome-preview.gif": "526231f1c35045e98ca4e539f520e10a54ce84b18b25ae6920a15640af443a5a"
   },
   "expert_source_run": 34717099451,
   "student_source_run": 34721888010,
   "mp4": "Original simulator recordings, first evaluation seed, 10x slow motion.",
   "gif": "Derived from expert-flight.mp4 using FFmpeg: 320px wide, 10fps, 32 colors; same playback duration.",
   "autonomous_source_run": 34747591540,
-  "nonlinear_source_run": 34755571903
+  "nonlinear_source_run": 34755571903,
+  "connectome_example": {
+    "seed": 80001,
+    "score_context": "Selected success from 5/10; see results/2026-09-13-connectome-example",
+    "mp4": "Original recorded replay",
+    "gif": "FFmpeg derivative: 320px,10fps,32 colors; 10x simulated-time slowdown"
+  }
 }

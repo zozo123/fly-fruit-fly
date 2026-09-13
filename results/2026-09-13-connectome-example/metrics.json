@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "controller": "superfly_connectome_student",
+  "control_mode": "full",
+  "action_repeat": 1,
+  "policy_interval_s": 0.0002,
+  "task": {
+    "name": "flybody_straight_flight",
+    "speed_cm_s": 20,
+    "initial_height_cm": 1,
+    "reference_duration_s": 0.6,
+    "wing_pattern": "official_fmech"
+  },
+  "wing_pattern_provenance": {
+    "article": "https://api.figshare.com/v2/articles/25309105",
+    "article_version": 4,
+    "file_id": 51196859,
+    "download_url": "https://ndownloader.figshare.com/files/51196859",
+    "sha256": "f97b975ef1b5adbe42c208ea9665f3c37fa432914f56f3943f1697cdb090d1ce",
+    "archive_member": "wing_pattern_fmech.npy",
+    "member_crc32": 3341232839,
+    "verification": "Member CRC32 and SHA256; full archive MD5 not checked (range retrieval)"
+  },
+  "video_slowdown": 10.0,
+  "video_capture_stride": 10,
+  "episodes": [
+    {
+      "seed": 80001,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2707.1807867328203,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.026714255027160645,
+      "final_height_cm": 0.9877560923380383,
+      "failed": false,
+      "completed_reference": true
+    }
+  ],
+  "completion_rate": 1.0,
+  "mean_return": 2707.1807867328203,
+  "note": "Connectome-structured learned controller. BANC supplies measured wiring; sensory mapping, neural dynamics and motor readout are learned engineering components."
+}

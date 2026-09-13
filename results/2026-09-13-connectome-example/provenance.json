@@ -1,0 +1,9 @@
+{
+  "source_run": 34755571903,
+  "source_artifact": 10317556890,
+  "checkpoint_sha256": "3e4e3b5a0fd5e7f8b48d6106e898223f41d8efd34c099efd6641f493a752786a",
+  "selection": "Explicitly selected successful seed 80001 from a 5/10 held-out result; demonstration only.",
+  "render_run": 34756299515,
+  "render_artifact": 10317492702,
+  "render_archive_sha256": "ec3775c8c5473bcd3b479c51ce08882e7db11fe0a8f716da367fc0724c65ada7"
+}
