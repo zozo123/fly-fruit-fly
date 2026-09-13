@@ -7,6 +7,7 @@ from fly_fruit_fly.superfly import SuperFlyPolicy, distill
 from fly_fruit_fly.flight_training import (
     _validate_seed_panel,
     fit_readout,
+    training_rounds_complete,
     validate_validation_protocol,
     validation_protocol,
     validation_score,
@@ -78,3 +79,12 @@ def test_validation_protocol_rejects_any_cross_panel_overlap():
     protocol['round_promotion_seeds'] = [30002, 30003, 30004]
     with pytest.raises(ValueError, match='overlap'):
         validate_validation_protocol(protocol)
+
+
+def test_training_consumes_full_configured_dagger_round_budget():
+    assert not training_rounds_complete(0, 8)
+    assert not training_rounds_complete(7, 8)
+    assert training_rounds_complete(8, 8)
+    assert training_rounds_complete(9, 8)
+    with pytest.raises(ValueError, match='non-negative'):
+        training_rounds_complete(-1, 8)
