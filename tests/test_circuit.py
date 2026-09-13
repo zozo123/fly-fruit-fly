@@ -64,6 +64,32 @@ def test_cape_requires_a_directed_path_from_inputs_to_outputs():
         _require_routed_path({"reachable_output_nodes": 0})
 
 
+def test_cape_policy_rejects_disconnected_role_routing():
+    graph = ConnectomeGraph(
+        node_ids=np.arange(100, 104, dtype=np.int64),
+        edge_src=np.array([0, 2], dtype=np.int64),
+        edge_dst=np.array([1, 3], dtype=np.int64),
+        edge_weight=np.ones(2, dtype=np.float32),
+        metadata={
+            "kind": "test-cape-disconnected",
+            "roles": {
+                "sensory_input_node_ids": [100],
+                "ascending_node_ids": [],
+                "descending_node_ids": [],
+                "motor_output_node_ids": [103],
+                "flight_annotated_node_ids": [],
+            },
+        },
+    )
+    with pytest.raises(RuntimeError, match="no directed path"):
+        CapeSuperFlyPolicy(
+            graph,
+            4,
+            -np.ones(12, dtype=np.float32),
+            np.ones(12, dtype=np.float32),
+        )
+
+
 def test_cape_routes_observations_only_into_input_roles_on_first_substep():
     policy = make_policy(substeps=1)
     with torch.no_grad():
