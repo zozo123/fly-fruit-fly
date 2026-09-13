@@ -11,7 +11,7 @@ permissions:
 jobs:
   train:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       MUJOCO_GL: egl
       OMP_NUM_THREADS: '2'
@@ -34,10 +34,26 @@ jobs:
           pytest -q tests/test_nonlinear_training.py
       - uses: actions/download-artifact@v4
         with:
-          name: autonomous-connectome-student
-          run-id: 34747591540
+          name: nonlinear-connectome-student
+          run-id: 34755571903
           github-token: ${{ github.token }}
           path: runs/warm
+      - name: Record a previously observed successful connectome flight
+        run: |
+          superfly evaluate --checkpoint runs/warm/student.pt --graph runs/warm/graph.npz --episodes 1 --seed 80001 --video --output runs/warm-start-success
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          Path('runs/warm-start-success/provenance.json').write_text(json.dumps({
+              'source_run':34755571903,'source_artifact':10317556890,
+              'checkpoint_sha256':hashlib.sha256(Path('runs/warm/student.pt').read_bytes()).hexdigest(),
+              'selection':'Explicitly selected successful seed 80001 from a 5/10 held-out result; demonstration only.'
+          },indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: connectome-success-example
+          path: runs/warm-start-success
       - name: Train nonlinear decoder and test independently
         run: |
           python -m fly_fruit_fly.nonlinear_training --checkpoint runs/warm/student.pt --graph runs/warm/graph.npz --output runs/nonlinear
