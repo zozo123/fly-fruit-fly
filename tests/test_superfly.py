@@ -15,6 +15,8 @@ from fly_fruit_fly.superfly import (
     _bootstrap_reward,
     canonical_to_native,
     distill,
+    load_checkpoint,
+    save_checkpoint,
 )
 
 
@@ -148,3 +150,45 @@ def test_seeded_initialization_replays_exactly():
     a, _ = first.predict(np.ones(4, dtype=np.float32))
     b, _ = second.predict(np.ones(4, dtype=np.float32))
     np.testing.assert_array_equal(a, b)
+
+
+def test_checkpoint_round_trip_and_graph_mismatch(tmp_path):
+    graph = toy_graph()
+    policy = SuperFlyPolicy(graph, 4, -np.ones(12), np.ones(12))
+    path = tmp_path / "student.pt"
+    save_checkpoint(policy, graph, path, {"seed": 1234})
+    restored = load_checkpoint(path, graph)
+    obs = np.ones(4, dtype=np.float32)
+    np.testing.assert_array_equal(policy.predict(obs)[0], restored.predict(obs)[0])
+    shuffled = degree_preserving_shuffle(graph, seed=7, swaps=40)
+    with pytest.raises(ValueError, match="wiring"):
+        load_checkpoint(path, shuffled)
+    with pytest.raises(ValueError, match="wiring"):
+        save_checkpoint(policy, shuffled, tmp_path / "wrong.pt", {})
+
+
+def test_checkpoint_rejects_relabeled_neurons_and_changed_provenance(tmp_path):
+    graph = toy_graph()
+    policy = SuperFlyPolicy(graph, 4, -np.ones(12), np.ones(12))
+    path = tmp_path / "student.pt"
+    save_checkpoint(policy, graph, path, {})
+    relabeled = ConnectomeGraph(graph.node_ids + 1, graph.edge_src, graph.edge_dst,
+                               graph.edge_weight, graph.metadata)
+    with pytest.raises(ValueError, match="neuron IDs"):
+        load_checkpoint(path, relabeled)
+    with pytest.raises(ValueError, match="neuron IDs"):
+        save_checkpoint(policy, relabeled, tmp_path / "relabeled.pt", {})
+    changed = ConnectomeGraph(graph.node_ids, graph.edge_src, graph.edge_dst,
+                             graph.edge_weight, {"dataset": "different"})
+    with pytest.raises(ValueError, match="provenance"):
+        load_checkpoint(path, changed)
+
+
+def test_committed_legacy_student_loads_with_restricted_loader():
+    from pathlib import Path
+    folder = Path(__file__).resolve().parents[1] / "results/2026-09-12-superfly"
+    graph = load_graph(folder / "banc-v888-superfly.npz")
+    policy = load_checkpoint(folder / "superfly.pt", graph)
+    action, _ = policy.predict(np.zeros(policy.obs_dim, dtype=np.float32))
+    assert action.shape == (12,)
+    assert np.isfinite(action).all()

@@ -44,6 +44,7 @@ class SuperFlyPolicy(nn.Module):
         super().__init__()
         graph.validate()
         self.n_nodes = graph.n_nodes
+        self.node_ids = graph.node_ids.copy()
         self.obs_dim = int(obs_dim)
         self.action_dim = int(len(action_low))
         if self.action_dim != 12:
@@ -509,8 +510,13 @@ def evaluate(
 
 
 def save_checkpoint(policy: SuperFlyPolicy, graph: ConnectomeGraph, output: Path, training: dict):
+    graph.validate()
+    _check_graph_adjacency(policy.adjacency, graph)
+    if not np.array_equal(policy.node_ids, graph.node_ids):
+        raise ValueError("Policy neuron IDs do not match the supplied connectome graph")
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save({
+        "graph_node_ids": torch.as_tensor(graph.node_ids.copy(), dtype=torch.int64),
         "state_dict": policy.state_dict(),
         "obs_dim": policy.obs_dim,
         "action_low": policy.action_low.cpu(),
@@ -520,8 +526,33 @@ def save_checkpoint(policy: SuperFlyPolicy, graph: ConnectomeGraph, output: Path
     }, output)
 
 
+def _check_graph_adjacency(adjacency: torch.Tensor, graph: ConnectomeGraph) -> None:
+    """Compare canonical sparse wiring before state_dict can overwrite it."""
+    if not adjacency.is_sparse:
+        raise ValueError("Checkpoint adjacency must be sparse")
+    actual = adjacency.detach().cpu().coalesce()
+    expected = torch.sparse_coo_tensor(
+        torch.as_tensor(np.vstack([graph.edge_dst, graph.edge_src]), dtype=torch.long),
+        torch.as_tensor(graph.edge_weight, dtype=torch.float32),
+        size=(graph.n_nodes, graph.n_nodes),
+    ).coalesce()
+    if (actual.shape != expected.shape or
+            not torch.equal(actual.indices(), expected.indices()) or
+            not torch.equal(actual.values(), expected.values())):
+        raise ValueError("Checkpoint wiring does not match the supplied connectome graph")
+
+
 def load_checkpoint(checkpoint: Path, graph: ConnectomeGraph) -> SuperFlyPolicy:
-    data = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    graph.validate()
+    data = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    _check_graph_adjacency(data["state_dict"]["adjacency"], graph)
+    if data.get("graph_metadata") != graph.metadata:
+        raise ValueError("Checkpoint provenance does not match the supplied connectome graph")
+    # Older checkpoints did not record IDs; their wiring and provenance are still checked.
+    if "graph_node_ids" in data and not torch.equal(
+        data["graph_node_ids"], torch.as_tensor(graph.node_ids, dtype=torch.int64)
+    ):
+        raise ValueError("Checkpoint neuron IDs do not match the supplied connectome graph")
     policy = SuperFlyPolicy(
         graph,
         int(data["obs_dim"]),

@@ -1,18 +1,66 @@
-# SuperFly · fly-fruit-fly
+# SuperFly — teach a connectome to control a fly
 
-**A working simulated flight demo, with an experimental controller built on measured fruit-fly wiring.**
+**We turn measured fruit-fly neural wiring into a recurrent neural network, train it to imitate a flight expert, and test whether it can fly a simulated body by itself.**
 
-The released [Flybody](https://github.com/TuragaLab/flybody) expert passes **10/10 straight flights**: **0.5988 s** each, **0.0269 cm** mean tracking error. SuperFly learns from that expert through a fixed sparse BANC connectome; its current autonomous student passes **0/10**. Both results are recorded below.
+A **connectome** is a directed, weighted graph: neurons are nodes; connections between neurons are edges. We use a small subgraph of **BANC v888**, a measured fly brain-and-nerve-cord connectome.
 
-[![Successful Flybody expert flight, shown at 10× slow motion](media/expert-preview.gif)](media/expert-flight.mp4)
+## How it works
 
-**[Play the flight movie](media/expert-flight.mp4)** · [Student movie](media/superfly-student.mp4) · [Verified expert run](https://github.com/zozo123/fly-fruit-fly/actions/runs/34717099451)
+```mermaid
+flowchart TD
+    D["Measured BANC wiring"] --> A["Fixed sparse connection matrix A"]
+    O["Body state and target trajectory"] --> S["Learned sensory layer"]
+    S --> H["Recurrent neuron activity h"]
+    A --> H
+    H --> H
+    H --> M["Learned motor layer"]
+    M --> F["12 actuator commands → simulated fly"]
+    F --> O
+```
 
-The animation plays directly in this README. Click it for the MP4. These are actual MuJoCo frames from the first evaluation episode: orange is the controlled fly, translucent is the reference. Playback is **10× slower than simulation**; the six-second movie represents about 0.6 seconds of flight.
+Think of the connectome as the network's **internal wiring diagram**. We keep that wiring fixed and learn how to feed information into it and turn its activity into motor commands.
 
-## Run the working flight demo
+| Component | What it does | Trained? |
+| --- | --- | --- |
+| BANC graph | Routes activity between selected neurons | **Fixed** |
+| Sensory layer | Maps observations into neuron inputs | Yes |
+| Neuron dynamics | Controls how activity changes and persists | Yes |
+| Motor layer | Turns activity into 12 actuator commands | Yes |
+| Flybody simulator | Computes wing motion and body physics | Fixed |
 
-Tested on Ubuntu 22.04, Python 3.11, CPU, headless EGL. Start in a clone of this repository.
+Our committed student uses **256 neurons and 1,949 directed edges**. In CS terms, it is a small RNN whose recurrent matrix comes from measured wiring.
+
+Each step combines new sensory input with `A @ h`, applies `tanh`, and blends that result with the previous activity. The motor layer reads this updated activity. Learned gain and leak parameters control the strength of recurrence and how quickly state changes. The controller acts every **0.2 ms**.
+
+## How it learns
+
+1. **Watch an expert.** Run the released Flybody controller and record observations plus its 12 motor commands.
+2. **Imitate.** Train the student to predict those commands. Gradients update the sensory layer, neuron dynamics and motor layer; the BANC matrix stays fixed.
+3. **Learn from its mistakes.** Let the student influence the fly, ask the expert what it would do in the states reached, and add those examples to training. This is **DAgger**, or dataset aggregation.
+4. **Fly alone.** Evaluate the student without expert actions and score actual flight.
+
+Optional PPO-style reinforcement fine-tuning and a shuffled-wiring control are implemented. The committed corrective student used **no RL fine-tuning**.
+
+## What works today
+
+[![Released expert flying in MuJoCo at 10× slow motion](media/expert-preview.gif)](media/expert-flight.mp4)
+
+**[Play expert movie](media/expert-flight.mp4)** · **[Play connectome student attempt](media/superfly-student.mp4)**
+
+The animation above shows the **released expert**. Both movies are real simulator recordings of the first evaluation episode, at **10× slow motion**. Orange is the controlled fly; translucent is the target.
+
+| Controller | Flights passing the gate | Mean duration | Mean tracking error |
+| --- | ---: | ---: | ---: |
+| Released Flybody expert | **10/10** | 598.8 ms | 0.0269 cm |
+| Our connectome student | **0/10** | 83.24 ms | 0.3281 cm |
+
+**The connectome student is implemented and trained, but has not learned stable flight yet.** Expert assistance helped it complete training rollouts; autonomous evaluation still failed.
+
+The task starts airborne and follows a straight trajectory at 20 cm/s. The gate requires at least 10 episodes, with at least 90% completing ≥0.59 s and averaging ≤0.1 cm position error. These runs use different seeds; the table is descriptive. Some seeds map to the same initial wingbeat phase.
+
+## Run the connectome student
+
+Linux / Python 3.11 / CPU / headless EGL:
 
 ```bash
 sudo apt-get update
@@ -20,103 +68,35 @@ sudo apt-get install -y libegl1-mesa libgl1-mesa-dri ffmpeg
 uv venv --python 3.11
 source .venv/bin/activate
 uv pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
-uv pip install -e '.[expert,dev]'
+uv pip install -e '.[superfly,dev]'
 export MUJOCO_GL=egl
 
-fly evaluate --expert --episodes 10 --seed 40000 --video --output runs/expert
-fly assess runs/expert/metrics.json --require-pass
-```
-
-Open `runs/expert/flight.mp4`. The command downloads the released expert (about 6.5 MB) and retrieves the small official FMech wing-pattern member using HTTP ranges. No connectome download is needed for this demo. The expert archive is SHA-256 pinned; wing-pattern provenance records its SHA-256 and ZIP-member CRC, without claiming verification of the entire dataset archive.
-
-## What is verified
-
-| Controller | Passing episodes | Mean flight duration | Mean episode tracking error |
-| --- | ---: | ---: | ---: |
-| Released Flybody expert | **10/10** | **598.8 ms** | **0.0269 cm** |
-| SuperFly BANC student, corrective imitation | 0/10 | 83.24 ms | 0.3281 cm |
-| Earlier PPO, 73,728 total steps | 0/10 | 72.44 ms | 0.394 cm |
-
-These are separate experiments with different evaluation seeds and, for the earlier PPO, a different wing pattern. The table is descriptive; it does not establish a paired improvement or an advantage from biological wiring.
-
-The fixed gate requires at least 10 episodes and a 90% pass rate. A passing episode completes the reference, lasts at least 0.59 s, and averages at most 0.1 cm target-position error. Reward alone cannot pass the gate. `--require-pass` exits 2 on failure.
-
-The target is airborne straight flight at 20 cm/s, starting at 1 cm height. Evaluation varies initial wingbeat phase; some seeds produce the same discrete phase. This establishes performance on this task only. Takeoff, hovering, maneuvers, disturbances, and general flight remain unvalidated.
-
-## The SuperFly model
-
-SuperFly uses a selected subgraph of **BANC v888 measured neuron-to-neuron connectivity** as a fixed sparse recurrent matrix. The committed student has **256 nodes and 1,949 directed edges**.
-
-```mermaid
-flowchart LR
-    O["Body observations"] --> S["Learned sensory projection"]
-    S --> C["Fixed BANC recurrent wiring"]
-    C --> M["Learned motor readout"]
-    M --> P["12 actions · Flybody physics"]
-    P --> O
-```
-
-Sensory projection, recurrent gain, node leak/bias, and motor/value readouts are trainable. The measured adjacency is a buffer. Positive input-normalized edge weights are used as an engineering structural prior; neurotransmitter signs and biological neural dynamics are not reconstructed.
-
-Training collects expert demonstrations, fits native actuator actions with truncated backpropagation, then adds DAgger corrective labels on states visited by mixed teacher/student control. Optional PPO-style fine-tuning uses stored recurrent states for one-step updates. A directed degree-preserving shuffled graph is available as a control; no completed comparison establishes that measured wiring helps.
-
-The current corrective run used two teacher episodes and three DAgger rounds, with **zero RL fine-tuning steps**. Teacher-assisted rollouts completed, but autonomous evaluation failed. Lower imitation loss alone did not establish flight.
-
-## Replay the committed student
-
-```bash
-uv pip install -e '.[superfly,dev]'
 superfly evaluate \
   --graph results/2026-09-12-superfly/banc-v888-superfly.npz \
   --checkpoint results/2026-09-12-superfly/superfly.pt \
-  --episodes 10 --seed 51234 --video --output runs/student-replay
-fly assess runs/student-replay/metrics.json
+  --episodes 10 --seed 51234 --video --output runs/student
+fly assess runs/student/metrics.json
 ```
 
-The checkpoint includes learned parameters and observation normalization. Keep it with its matching graph. It is a failed research candidate, ready for inspection and continued experimentation.
+This replays the committed failed candidate. New checkpoints record neuron IDs; loading checks wiring and provenance before applying weights. Legacy checkpoints, including this one, lack explicit neuron IDs and receive wiring/provenance checks.
 
-## Train a new student
+**[Training commands, expert demo and detailed methodology →](docs/experiments.md)**
 
-This path additionally downloads BANC metadata and the neuron edgelist, and materializes the selected subgraph with source/version/hash provenance.
+## What the biology contributes
 
-```bash
-python -m fly_fruit_fly.curriculum \
-  --nodes 256 --min-synapses 5 \
-  --teacher-episodes 2 --distill-epochs 6 --bptt-steps 64 \
-  --dagger-rounds 3 --dagger-episodes 1 --dagger-epochs 2 \
-  --dagger-start-beta 0.8 --dagger-end-beta 0.0 \
-  --rl-steps 0 --eval-episodes 10 --seed 1234 --video \
-  --output runs/superfly-corrective
-fly assess runs/superfly-corrective/evaluation/metrics.json --require-pass
-```
+BANC supplies measured connectivity and positive input-normalized edge weights. We select a small subgraph using motor/descending/flight-related annotations. Sensory encoding, neural dynamics and motor decoding are learned engineering choices; neurotransmitter signs are not modeled.
 
-Use a fresh output directory for each experiment. Add `--shuffled` for the wiring control. The historical candidate predates fixes that seed parameter initialization and bootstrap time-limit value estimates; fresh training is not expected to reproduce its weights exactly. No new flight-performance claim is made for those fixes.
+We have not shown that biological wiring beats shuffled wiring. The implemented control rewires edges while preserving each node's incoming/outgoing degree and the edge-weight multiset. That comparison is needed before claiming an advantage from the connectome. Takeoff, maneuvering and disturbance recovery also remain unvalidated.
 
-[SuperFly workflow](.github/workflows/superfly.yml) also supports a manually dispatched real-versus-shuffled training experiment. Workflow completion means the experiment ran; inspect its flight metrics before promoting a model.
+## Evidence and credit
 
-## Evidence and verification
-
-- [Expert metrics, assessment, environment and provenance](results/2026-09-12-expert/)
-- [Student metrics, assessment, training, checkpoint, graph and provenance](results/2026-09-12-superfly/)
-- [Student training run and full artifact](https://github.com/zozo123/fly-fruit-fly/actions/runs/34721888010) — includes corrective dataset and trajectory trace; Actions artifacts have limited retention.
-- [Earlier PPO evidence](results/2026-09-12-sustained/) · [Original smoke checkpoint](results/2026-09-12-smoke/) · [Earlier failure movie](media/comparison.mp4)
-- [Media checksums and recording provenance](media/provenance.json)
-
-Verify the committed reports and file hashes without installing the simulator:
+[Student checkpoint, graph, training and scores](results/2026-09-12-superfly/) · [Expert scores](results/2026-09-12-expert/) · [Media provenance](media/provenance.json)
 
 ```bash
 python scripts/verify_flight_release.py
-python scripts/verify_results.py
+pytest -q
 ```
 
-Run code and simulator tests with `pytest -q`. Evidence retains the exact source commit and original artifact SHA-256. Videos illustrate behavior; metrics determine the gate.
+The verifier checks saved assessments against raw metrics and checks file hashes. Historical results retain their exact source commit; later code fixes do not retroactively change them.
 
-## Sources and credit
-
-Flybody is developed by HHMI Janelia and Google DeepMind and distributed under Apache-2.0. The successful controller is their released pretrained expert. This project supplies integration, evaluation, and experimental student training.
-
-- [Pinned Flybody source](https://github.com/TuragaLab/flybody/tree/d015e9bfe441bd90ae431bac24c55cb74bdbce26)
-- [Whole-body physics simulation of fruit fly locomotion](https://doi.org/10.1038/s41586-025-09029-4)
-- [Released Flybody assets](https://janelia.figshare.com/articles/dataset/25309105)
-- [BANC paper](https://doi.org/10.1038/s41586-026-10735-w) · [BANC static data](https://doi.org/10.7910/DVN/7WTH1N)
-
+Built on [Flybody](https://github.com/TuragaLab/flybody) by HHMI Janelia and Google DeepMind, using their released pretrained expert. Sources: [Flybody paper](https://doi.org/10.1038/s41586-025-09029-4), [BANC paper](https://doi.org/10.1038/s41586-026-10735-w), [BANC data](https://doi.org/10.7910/DVN/7WTH1N).
