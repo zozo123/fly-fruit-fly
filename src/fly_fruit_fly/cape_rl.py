@@ -14,10 +14,11 @@ import copy
 import math
 import sys
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import torch
-from torch.distributions import Normal, kl_divergence
+from torch.distributions import kl_divergence
 
 from . import flight_training
 from .superfly import _bootstrap_reward, _compute_gae, _make_env
@@ -42,6 +43,47 @@ def set_exploration_std(policy, exploration_std: float) -> float:
     return std
 
 
+def _guarded_optimizer_step(
+    module: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    loss: torch.Tensor,
+    *,
+    kl_fn: Callable[[], torch.Tensor],
+    max_kl: float,
+) -> tuple[bool, float]:
+    """Apply one update transactionally and reject any step outside the KL trust region.
+
+    The current policy is checked before mutating it. Parameters/buffers and optimizer
+    state are then snapshotted, the proposed gradient step is applied, and KL is
+    recomputed from the updated policy. If the candidate crosses ``max_kl`` both the
+    model and optimizer are restored exactly, so an early-stop decision cannot leave
+    a policy that already violated the anchor constraint.
+    """
+    max_kl = _validated_positive("max_kl", max_kl)
+    with torch.no_grad():
+        current_kl = float(kl_fn().detach())
+    if not math.isfinite(current_kl):
+        raise ValueError("anchor KL must remain finite")
+    if current_kl > max_kl:
+        return False, current_kl
+
+    module_state = {name: tensor.detach().clone() for name, tensor in module.state_dict().items()}
+    optimizer_state = copy.deepcopy(optimizer.state_dict())
+
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(module.parameters(), 1.0)
+    optimizer.step()
+
+    with torch.no_grad():
+        post_kl = float(kl_fn().detach())
+    if not math.isfinite(post_kl) or post_kl > max_kl:
+        module.load_state_dict(module_state)
+        optimizer.load_state_dict(optimizer_state)
+        return False, post_kl
+    return True, post_kl
+
+
 def anchored_ppo_finetune(
     policy,
     *,
@@ -59,14 +101,15 @@ def anchored_ppo_finetune(
     kl_coef: float = 2.0,
     target_kl: float = 0.02,
 ) -> list[dict]:
-    """Refine CAPE with PPO while penalizing drift from the pre-RL imitation policy.
+    """Refine CAPE with PPO while anchoring every accepted step to imitation.
 
     The immutable ``anchor`` is a deep copy of the incoming imitation/DAgger policy.
-    PPO still learns from environment reward, but each minibatch pays an analytic
-    Gaussian KL penalty against that fixed controller. Updates stop for the current
-    rollout once mean KL exceeds ``2 * target_kl``. The outer CAPE trainer retains
-    its independent promotion-panel rollback, so this is an additional safety layer,
-    not a replacement for autonomous validation.
+    PPO learns from environment reward, but each minibatch pays an analytic Gaussian
+    KL penalty against that fixed controller. A candidate optimizer step is accepted
+    only if the *post-update* mean KL remains at or below ``2 * target_kl``; otherwise
+    model and Adam state are restored. The outer trainer still performs independent
+    promotion-panel rollback, so this is an additional safety layer rather than a
+    replacement for autonomous validation.
     """
     if total_steps <= 0:
         return []
@@ -77,6 +120,7 @@ def anchored_ppo_finetune(
     kl_coef = _validated_positive("kl_coef", kl_coef)
     target_kl = _validated_positive("target_kl", target_kl)
     exploration_std = set_exploration_std(policy, exploration_std)
+    max_anchor_kl = 2.0 * target_kl
 
     anchor = copy.deepcopy(policy)
     anchor.eval()
@@ -152,6 +196,7 @@ def anchored_ppo_finetune(
 
             losses: list[float] = []
             kls: list[float] = []
+            rejected_update_kl = None
             stopped_for_kl = False
             for _ in range(epochs):
                 order = rng.permutation(n)
@@ -174,15 +219,28 @@ def anchored_ppo_finetune(
                     value_loss = 0.5 * torch.mean((new_value - ret_tensor[idx]) ** 2)
                     anchor_kl = kl_divergence(distribution, anchor_distribution).sum(-1).mean()
                     loss = actor_loss + 0.5 * value_loss + kl_coef * anchor_kl
-                    optimizer.zero_grad(set_to_none=True)
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
-                    optimizer.step()
-                    losses.append(float(loss.detach()))
-                    kls.append(float(anchor_kl.detach()))
-                    if kls[-1] > 2.0 * target_kl:
+
+                    def current_anchor_kl() -> torch.Tensor:
+                        current_distribution, _, _ = policy.distribution(
+                            obs_tensor[idx], state_tensor[idx]
+                        )
+                        return kl_divergence(
+                            current_distribution, anchor_distribution
+                        ).sum(-1).mean()
+
+                    accepted, observed_kl = _guarded_optimizer_step(
+                        policy,
+                        optimizer,
+                        loss,
+                        kl_fn=current_anchor_kl,
+                        max_kl=max_anchor_kl,
+                    )
+                    if not accepted:
+                        rejected_update_kl = observed_kl
                         stopped_for_kl = True
                         break
+                    losses.append(float(loss.detach()))
+                    kls.append(observed_kl)
                 if stopped_for_kl:
                     break
 
@@ -195,9 +253,11 @@ def anchored_ppo_finetune(
                     "loss": float(np.mean(losses)) if losses else None,
                     "mean_anchor_kl": float(np.mean(kls)) if kls else 0.0,
                     "max_anchor_kl": float(np.max(kls)) if kls else 0.0,
+                    "rejected_update_kl": rejected_update_kl,
                     "stopped_for_kl": stopped_for_kl,
                     "exploration_std": exploration_std,
                     "target_kl": target_kl,
+                    "max_anchor_kl": max_anchor_kl,
                     "kl_coef": kl_coef,
                 }
             )
@@ -215,6 +275,7 @@ def main() -> None:
     known, remaining = parser.parse_known_args()
 
     def refinement(policy, **kwargs):
+        """Inject anchored PPO while preserving the ordinary trainer interface."""
         return anchored_ppo_finetune(
             policy,
             exploration_std=known.exploration_std,
