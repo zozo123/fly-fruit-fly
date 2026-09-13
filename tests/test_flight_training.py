@@ -8,6 +8,7 @@ from fly_fruit_fly.flight_training import (
     _episode_gate_progress,
     _validate_seed_panel,
     fit_readout,
+    rl_training_seed,
     teacher_mix_beta,
     validate_validation_protocol,
     validation_protocol,
@@ -131,3 +132,18 @@ def test_validation_protocol_rejects_any_cross_panel_overlap():
     protocol['confirmation_test_seeds'] = [70009, 70010, 70011]
     with pytest.raises(ValueError, match='overlap'):
         validate_validation_protocol(protocol)
+
+
+def test_rl_training_seed_uses_a_separate_namespace():
+    protocol = validation_protocol()
+    seed = rl_training_seed(1234, protocol)
+    reserved = {value for panel in protocol.values() for value in panel}
+    assert seed == 101234
+    assert seed not in reserved
+
+
+def test_rl_training_seed_rejects_collision_with_any_evaluation_panel():
+    protocol = validation_protocol()
+    protocol['confirmation_test_seeds'] = list(range(100000, 100010))
+    with pytest.raises(ValueError, match='overlaps'):
+        rl_training_seed(0, protocol)
