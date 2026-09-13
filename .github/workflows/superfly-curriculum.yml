@@ -1,0 +1,97 @@
+name: SuperFly corrective curriculum
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/superfly-curriculum.yml'
+      - 'src/fly_fruit_fly/curriculum.py'
+      - 'src/fly_fruit_fly/connectome.py'
+      - 'src/fly_fruit_fly/superfly.py'
+      - 'src/fly_fruit_fly/expert.py'
+      - 'src/fly_fruit_fly/env.py'
+      - 'tests/test_superfly.py'
+      - 'pyproject.toml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: superfly-curriculum-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      MUJOCO_GL: egl
+      OMP_NUM_THREADS: '4'
+      TF_NUM_INTRAOP_THREADS: '4'
+      TF_NUM_INTEROP_THREADS: '1'
+      TF_CPP_MIN_LOG_LEVEL: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install SuperFly stack
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1-mesa libgl1-mesa-dri ffmpeg
+          python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e '.[superfly,dev]'
+          pytest -q tests/test_superfly.py
+      - name: Restore paper-version BANC v888
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/fly-fruit-fly/banc-v888
+          key: banc-v888-paper-v2
+      - name: Train corrective connectome student
+        run: |
+          python -m fly_fruit_fly.curriculum \
+            --nodes 256 \
+            --min-synapses 5 \
+            --teacher-episodes 2 \
+            --distill-epochs 6 \
+            --bptt-steps 64 \
+            --dagger-rounds 3 \
+            --dagger-episodes 1 \
+            --dagger-epochs 2 \
+            --dagger-start-beta 0.8 \
+            --dagger-end-beta 0.0 \
+            --rl-steps 0 \
+            --eval-episodes 10 \
+            --seed 1234 \
+            --video \
+            --output runs/superfly-corrective
+      - name: Apply the fixed flight gate
+        run: |
+          fly assess runs/superfly-corrective/evaluation/metrics.json > runs/superfly-corrective/assessment.json
+          cat runs/superfly-corrective/assessment.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Summarize learning trajectory
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('runs/superfly-corrective')
+          training = json.loads((root / 'training.json').read_text())
+          metrics = json.loads((root / 'evaluation/metrics.json').read_text())
+          assessment = json.loads((root / 'assessment.json').read_text())
+          print('initial distillation:', training['initial_distillation_losses'])
+          for r in training['dagger_rounds']:
+              print('DAgger', r['round'], 'beta=', r['beta'], 'corrective=', r['corrective'],
+                    'loss=', r['distillation_losses'][-1])
+          print('gate:', assessment['task_gate_passed'])
+          print('pass rate:', assessment['pass_rate'])
+          print('mean duration:', assessment['mean_duration_s'])
+          print('mean error cm:', assessment['mean_episode_tracking_error_cm'])
+          print('mean return:', metrics['mean_return'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: superfly-corrective-candidate
+          path: runs/superfly-corrective
+          retention-days: 30
+          if-no-files-found: warn

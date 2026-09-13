@@ -1,0 +1,207 @@
+name: SuperFly end to end
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/superfly.yml'
+      - 'src/fly_fruit_fly/connectome.py'
+      - 'src/fly_fruit_fly/superfly.py'
+      - 'src/fly_fruit_fly/expert.py'
+      - 'src/fly_fruit_fly/env.py'
+      - 'pyproject.toml'
+      - 'tests/test_superfly.py'
+  workflow_dispatch:
+    inputs:
+      nodes:
+        description: BANC neurons in recurrent substrate
+        required: false
+        default: '512'
+      teacher_episodes:
+        description: Expert rollouts used for distillation
+        required: false
+        default: '4'
+      distill_epochs:
+        description: Distillation epochs
+        required: false
+        default: '8'
+      rl_steps:
+        description: Native Flybody steps for RL fine-tuning
+        required: false
+        default: '16384'
+      eval_episodes:
+        description: Held-out evaluation episodes
+        required: false
+        default: '10'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: superfly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      MUJOCO_GL: egl
+      OMP_NUM_THREADS: '2'
+      TF_NUM_INTRAOP_THREADS: '2'
+      TF_NUM_INTEROP_THREADS: '1'
+      TF_CPP_MIN_LOG_LEVEL: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install SuperFly stack
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1-mesa libgl1-mesa-dri ffmpeg
+          python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e '.[superfly,dev]'
+      - name: Unit-test connectome and learning invariants
+        run: pytest -q tests/test_superfly.py
+      - name: Cache paper-version BANC v888
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/fly-fruit-fly/banc-v888
+          key: banc-v888-paper-v2
+      - name: Train real-connectome smoke controller
+        run: |
+          superfly train \
+            --nodes 128 \
+            --min-synapses 10 \
+            --teacher-episodes 1 \
+            --distill-epochs 1 \
+            --bptt-steps 32 \
+            --rl-steps 256 \
+            --eval-episodes 1 \
+            --seed 1234 \
+            --video \
+            --output runs/superfly-smoke
+      - name: Verify provenance and outputs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import numpy as np
+
+          root = Path('runs/superfly-smoke')
+          training = json.loads((root / 'training.json').read_text())
+          metrics = json.loads((root / 'evaluation/metrics.json').read_text())
+          with np.load(root / 'banc-v888-superfly.npz', allow_pickle=False) as data:
+              provenance = json.loads(str(data['metadata'].item()))
+
+          assert training['connectome'] == 'BANC v888 measured neuron-to-neuron wiring'
+          assert training['teacher'] == 'official_flybody_expert'
+          assert training['teacher_steps'] > 0
+          assert training['graph_nodes'] == 128
+          assert training['graph_edges'] > 0
+          assert metrics['controller'] == 'superfly_connectome_student'
+          assert provenance['source']['dataset'] == 'BANC'
+          assert provenance['source']['materialization'] == '888'
+          assert provenance['source']['paper_doi'] == '10.1038/s41586-026-10735-w'
+          assert provenance['source']['edgelist']['sha256']
+          assert provenance['source']['metadata']['sha256']
+          assert (root / 'superfly.pt').stat().st_size > 0
+          assert (root / 'evaluation/superfly.mp4').stat().st_size > 0
+          print(json.dumps({'training': training, 'evaluation': metrics}, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: superfly-banc-v888-smoke
+          path: runs/superfly-smoke
+          retention-days: 30
+          if-no-files-found: warn
+
+  full:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      MUJOCO_GL: egl
+      OMP_NUM_THREADS: '4'
+      TF_NUM_INTRAOP_THREADS: '4'
+      TF_NUM_INTEROP_THREADS: '1'
+      TF_CPP_MIN_LOG_LEVEL: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install SuperFly stack
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1-mesa libgl1-mesa-dri ffmpeg
+          python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e '.[superfly,dev]'
+          pytest -q tests/test_superfly.py
+      - name: Cache paper-version BANC v888
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/fly-fruit-fly/banc-v888
+          key: banc-v888-paper-v2
+      - name: Train measured-BANC SuperFly
+        run: |
+          superfly train \
+            --nodes '${{ inputs.nodes }}' \
+            --teacher-episodes '${{ inputs.teacher_episodes }}' \
+            --distill-epochs '${{ inputs.distill_epochs }}' \
+            --rl-steps '${{ inputs.rl_steps }}' \
+            --eval-episodes '${{ inputs.eval_episodes }}' \
+            --seed 1234 \
+            --video \
+            --output runs/superfly-banc
+      - name: Train degree-preserving shuffled control
+        run: |
+          superfly train \
+            --nodes '${{ inputs.nodes }}' \
+            --teacher-episodes '${{ inputs.teacher_episodes }}' \
+            --distill-epochs '${{ inputs.distill_epochs }}' \
+            --rl-steps '${{ inputs.rl_steps }}' \
+            --eval-episodes '${{ inputs.eval_episodes }}' \
+            --seed 1234 \
+            --shuffled \
+            --video \
+            --output runs/superfly-shuffled
+      - name: Compare biological wiring with shuffled control
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def load(path):
+              return json.loads(Path(path).read_text())
+
+          real = load('runs/superfly-banc/evaluation/metrics.json')
+          shuffled = load('runs/superfly-shuffled/evaluation/metrics.json')
+          report = {
+              'real_banc': {
+                  'completion_rate': real['completion_rate'],
+                  'mean_return': real['mean_return'],
+              },
+              'degree_preserving_shuffled': {
+                  'completion_rate': shuffled['completion_rate'],
+                  'mean_return': shuffled['mean_return'],
+              },
+              'delta_real_minus_shuffled': {
+                  'completion_rate': real['completion_rate'] - shuffled['completion_rate'],
+                  'mean_return': real['mean_return'] - shuffled['mean_return'],
+              },
+          }
+          Path('runs/connectome-comparison.json').write_text(json.dumps(report, indent=2) + '\n')
+          print(json.dumps(report, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: superfly-full-comparison
+          path: runs
+          retention-days: 30
+          if-no-files-found: error
