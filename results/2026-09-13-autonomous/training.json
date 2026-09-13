@@ -1,0 +1,544 @@
+{
+  "algorithm": "connectome_imitation_ridge_dagger",
+  "seed": 1234,
+  "graph_nodes": 256,
+  "graph_edges": 1949,
+  "teacher_episodes": 4,
+  "initial_losses": [
+    0.003469468995878761,
+    0.0008054178280201564,
+    0.0005227610495018033,
+    0.00040985705987208734,
+    0.0003014400618104229,
+    0.0004967900026163495,
+    0.00046657683590880454,
+    0.00033990933537880714,
+    0.00032794117979041915,
+    0.0004012964057601214,
+    0.00038801954980860617,
+    0.00033688656777639155
+  ],
+  "normalization": "fixed after initial teacher demonstrations",
+  "validation_seeds": [
+    30000,
+    30001,
+    30002
+  ],
+  "held_out_test_seeds": [
+    70000,
+    70001,
+    70002,
+    70003,
+    70004,
+    70005,
+    70006,
+    70007,
+    70008,
+    70009
+  ],
+  "expert_actions_at_evaluation": false,
+  "rl_steps": 0,
+  "candidates": [
+    {
+      "name": "round-00-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.06480000000000102,
+        -0.21904487058373778
+      ]
+    },
+    {
+      "name": "round-00-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 1.348173056750821e-05,
+      "validation_score": [
+        0,
+        0.059400000000001195,
+        -0.28751141390697726
+      ]
+    },
+    {
+      "name": "round-00-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 2.6614586992725985e-05,
+      "validation_score": [
+        0,
+        0.08053333333333262,
+        -0.3215787624363951
+      ]
+    },
+    {
+      "name": "round-01-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.08053333333333262,
+        -0.3215787624363951
+      ]
+    },
+    {
+      "name": "round-01-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 1.581786706475783e-05,
+      "validation_score": [
+        0,
+        0.0582666666666676,
+        -0.2792225100281056
+      ]
+    },
+    {
+      "name": "round-01-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 2.882611595312364e-05,
+      "validation_score": [
+        0,
+        0.0846666666666655,
+        -0.2445958779577655
+      ]
+    },
+    {
+      "name": "round-02-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.0846666666666655,
+        -0.2445958779577655
+      ]
+    },
+    {
+      "name": "round-02-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 1.6802755548167202e-05,
+      "validation_score": [
+        0,
+        0.06800000000000002,
+        -0.25441367762489825
+      ]
+    },
+    {
+      "name": "round-02-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 2.990114440308648e-05,
+      "validation_score": [
+        0,
+        0.08986666666666493,
+        -0.20586459079286148
+      ]
+    },
+    {
+      "name": "round-03-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.08986666666666493,
+        -0.20586459079286148
+      ]
+    },
+    {
+      "name": "round-03-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 2.019326385750726e-05,
+      "validation_score": [
+        0,
+        0.07626666666666643,
+        -0.22745117542303847
+      ]
+    },
+    {
+      "name": "round-03-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 3.310961220649564e-05,
+      "validation_score": [
+        0,
+        0.11153333333332921,
+        -0.19363151521355082
+      ]
+    },
+    {
+      "name": "round-04-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.11153333333332921,
+        -0.19363151521355082
+      ]
+    },
+    {
+      "name": "round-04-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 0.0002369654356886388,
+      "validation_score": [
+        0,
+        0.0810666666666659,
+        -0.19915030622724028
+      ]
+    },
+    {
+      "name": "round-04-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 0.0002390133050102783,
+      "validation_score": [
+        0,
+        0.09046666666666486,
+        -0.27487284625498815
+      ]
+    },
+    {
+      "name": "round-05-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.11153333333332921,
+        -0.19363151521355082
+      ]
+    },
+    {
+      "name": "round-05-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 0.00041501273455255716,
+      "validation_score": [
+        0,
+        0.10886666666666284,
+        -0.21192925911180294
+      ]
+    },
+    {
+      "name": "round-05-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 0.0004109064155414147,
+      "validation_score": [
+        0,
+        0.10053333333333042,
+        -0.22008179062678715
+      ]
+    },
+    {
+      "name": "round-06-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.11153333333332921,
+        -0.19363151521355082
+      ]
+    },
+    {
+      "name": "round-06-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 0.0007111018821024366,
+      "validation_score": [
+        0,
+        0.08939999999999831,
+        -0.26067436446749465
+      ]
+    },
+    {
+      "name": "round-06-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 0.0007027738704882869,
+      "validation_score": [
+        0,
+        0.08459999999999884,
+        -0.2640142405957367
+      ]
+    },
+    {
+      "name": "round-07-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.11153333333332921,
+        -0.19363151521355082
+      ]
+    },
+    {
+      "name": "round-07-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 0.0010231122461636648,
+      "validation_score": [
+        0,
+        0.07559999999999983,
+        -0.2296372421314561
+      ]
+    },
+    {
+      "name": "round-07-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 0.001014037224882935,
+      "validation_score": [
+        0,
+        0.09026666666666489,
+        -0.31020242883606136
+      ]
+    },
+    {
+      "name": "round-08-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.11153333333332921,
+        -0.19363151521355082
+      ]
+    },
+    {
+      "name": "round-08-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 0.0011800676780027203,
+      "validation_score": [
+        0,
+        0.06860000000000051,
+        -0.3047809951204625
+      ]
+    },
+    {
+      "name": "round-08-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 0.0011703961386361468,
+      "validation_score": [
+        0,
+        0.07020000000000043,
+        -0.34542553813088667
+      ]
+    },
+    {
+      "name": "round-09-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.11153333333332921,
+        -0.19363151521355082
+      ]
+    },
+    {
+      "name": "round-09-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 0.001379798370480734,
+      "validation_score": [
+        0,
+        0.07313333333333302,
+        -0.3049607048325275
+      ]
+    },
+    {
+      "name": "round-09-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 0.001369194094983966,
+      "validation_score": [
+        0,
+        0.06740000000000074,
+        -0.3109255359269805
+      ]
+    },
+    {
+      "name": "round-10-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.11153333333332921,
+        -0.19363151521355082
+      ]
+    },
+    {
+      "name": "round-10-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 0.0015580948812173997,
+      "validation_score": [
+        0,
+        0.06353333333333412,
+        -0.342974360781557
+      ]
+    },
+    {
+      "name": "round-10-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 0.0015468562691115864,
+      "validation_score": [
+        0,
+        0.061200000000000525,
+        -0.31976960062502297
+      ]
+    },
+    {
+      "name": "round-11-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.11153333333332921,
+        -0.19363151521355082
+      ]
+    },
+    {
+      "name": "round-11-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 0.0017128804423763215,
+      "validation_score": [
+        0,
+        0.06220000000000105,
+        -0.2812841795315682
+      ]
+    },
+    {
+      "name": "round-11-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 0.0017024664254447627,
+      "validation_score": [
+        0,
+        0.0718000000000002,
+        -0.2931621654064332
+      ]
+    },
+    {
+      "name": "round-12-ridge-None",
+      "ridge": null,
+      "training_action_mse": null,
+      "validation_score": [
+        0,
+        0.11153333333332921,
+        -0.19363151521355082
+      ]
+    },
+    {
+      "name": "round-12-ridge-1e-07",
+      "ridge": 1e-07,
+      "training_action_mse": 0.001835768089536751,
+      "validation_score": [
+        0,
+        0.07453333333333328,
+        -0.34413813588646597
+      ]
+    },
+    {
+      "name": "round-12-ridge-1e-05",
+      "ridge": 1e-05,
+      "training_action_mse": 0.001825056238636741,
+      "validation_score": [
+        0,
+        0.07833333333333287,
+        -0.34421368800621616
+      ]
+    }
+  ],
+  "corrective_rounds": [
+    {
+      "round": 0,
+      "beta": 0.8,
+      "episodes": 2,
+      "steps": 5988,
+      "mean_executed_return": 2703.3818359375,
+      "completion_rate": 1.0,
+      "mean_student_teacher_l1": 0.003404050570786756
+    },
+    {
+      "round": 1,
+      "beta": 0.6000000000000001,
+      "episodes": 2,
+      "steps": 5988,
+      "mean_executed_return": 2702.276123046875,
+      "completion_rate": 1.0,
+      "mean_student_teacher_l1": 0.0031732928390633274
+    },
+    {
+      "round": 2,
+      "beta": 0.4,
+      "episodes": 2,
+      "steps": 5988,
+      "mean_executed_return": 2702.06396484375,
+      "completion_rate": 1.0,
+      "mean_student_teacher_l1": 0.0037278499075181024
+    },
+    {
+      "round": 3,
+      "beta": 0.19999999999999996,
+      "episodes": 2,
+      "steps": 1769,
+      "mean_executed_return": 582.5595092773438,
+      "completion_rate": 0.0,
+      "mean_student_teacher_l1": 0.13210101191441614
+    },
+    {
+      "round": 4,
+      "beta": 0.0,
+      "episodes": 2,
+      "steps": 710,
+      "mean_executed_return": 169.7588348388672,
+      "completion_rate": 0.0,
+      "mean_student_teacher_l1": 0.2266794900452816
+    },
+    {
+      "round": 5,
+      "beta": 0.0,
+      "episodes": 2,
+      "steps": 1046,
+      "mean_executed_return": 306.8526611328125,
+      "completion_rate": 0.0,
+      "mean_student_teacher_l1": 0.12042634759247153
+    },
+    {
+      "round": 6,
+      "beta": 0.0,
+      "episodes": 2,
+      "steps": 1029,
+      "mean_executed_return": 305.07720947265625,
+      "completion_rate": 0.0,
+      "mean_student_teacher_l1": 0.1534876952458394
+    },
+    {
+      "round": 7,
+      "beta": 0.0,
+      "episodes": 2,
+      "steps": 710,
+      "mean_executed_return": 169.24609375,
+      "completion_rate": 0.0,
+      "mean_student_teacher_l1": 0.22528415692619247
+    },
+    {
+      "round": 8,
+      "beta": 0.0,
+      "episodes": 2,
+      "steps": 923,
+      "mean_executed_return": 252.172119140625,
+      "completion_rate": 0.0,
+      "mean_student_teacher_l1": 0.16900171679703602
+    },
+    {
+      "round": 9,
+      "beta": 0.0,
+      "episodes": 2,
+      "steps": 745,
+      "mean_executed_return": 189.89633178710938,
+      "completion_rate": 0.0,
+      "mean_student_teacher_l1": 0.1986293114920793
+    },
+    {
+      "round": 10,
+      "beta": 0.0,
+      "episodes": 2,
+      "steps": 912,
+      "mean_executed_return": 245.51980590820312,
+      "completion_rate": 0.0,
+      "mean_student_teacher_l1": 0.18490397149244392
+    },
+    {
+      "round": 11,
+      "beta": 0.0,
+      "episodes": 2,
+      "steps": 914,
+      "mean_executed_return": 266.86309814453125,
+      "completion_rate": 0.0,
+      "mean_student_teacher_l1": 0.16645422496036588
+    }
+  ],
+  "selected_candidate": "round-03-ridge-1e-05"
+}

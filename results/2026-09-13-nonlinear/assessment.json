@@ -1,0 +1,20 @@
+{
+  "task_gate_passed": false,
+  "criteria": {
+    "minimum_episodes": 10,
+    "minimum_pass_rate": 0.9,
+    "minimum_duration_s": 0.59,
+    "maximum_mean_error_cm": 0.1
+  },
+  "controller_config": {
+    "control_mode": "full",
+    "action_repeat": 1
+  },
+  "episodes": 10,
+  "passing_episodes": 5,
+  "pass_rate": 0.5,
+  "mean_duration_s": 0.3613399999999684,
+  "mean_return": 1538.3381501418146,
+  "mean_episode_tracking_error_cm": 0.11207314263237025,
+  "scope": "Straight-flight task only. No takeoff, robustness, or biological validation."
+}

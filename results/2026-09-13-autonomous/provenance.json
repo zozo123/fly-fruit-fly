@@ -1,0 +1,15 @@
+{
+  "source_commit": "791382ab7a0fb700fd2c0dbcc557d00b8e0ed5de",
+  "workflow_url": "https://github.com/zozo123/fly-fruit-fly/actions/runs/34747591540",
+  "artifact_id": 10314474973,
+  "artifact_zip_sha256": "9df6fc59cbcb2d07f5114a1f2f87791a192a5913fc5a272e308e4f996c58fa26",
+  "files": {
+    "metrics.json": "a015efea7701dde04900d2621cf1b0a0d6e912684cf21d1bead9e2ece10dd3c2",
+    "graph.npz": "2b44c80b7db245b39bfada98e8c0168d6ebbcd355bba188ea743c2db4757cec2",
+    "student.pt": "d50ca61ad37d7bccf6a308052111356f5bab8dc6c6983081455f8279b8d4b002",
+    "training.json": "f54b421cca1549ceacd197863581a9e888e0d6387cd12118c2fe3f62f525f3c7",
+    "assessment.json": "70204ad235f638241633a6db8fa0f95f0a017ac194a47323a00720ee3f2b41e3",
+    "environment.txt": "70d4b1def5bd508b0a69647c0ca2b06f0c41a1d0afd1a7bb88b5ce1575240795"
+  },
+  "note": "Historical held-out evaluation of the checkpoint selected on validation seeds. Flight gate failed."
+}

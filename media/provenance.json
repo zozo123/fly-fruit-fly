@@ -2,10 +2,14 @@
   "files": {
     "expert-flight.mp4": "f776cf27d1ca53586ad84a17a50177190cb519abf1d0454cf6b7285428d7f7a0",
     "expert-preview.gif": "6354e30d33f598f015084825ddf78209dad14b0c2145f3b4c5891d0be6c81686",
-    "superfly-student.mp4": "7e320b6ac10cf65c50bfa14d7da902fcd1f8dd61218adbfffdcce775038250df"
+    "superfly-student.mp4": "7e320b6ac10cf65c50bfa14d7da902fcd1f8dd61218adbfffdcce775038250df",
+    "autonomous-student.mp4": "17a6806cb87c4ae239d5b23b11b80c9413b21c5b68afe9adb70825a1aef28fac",
+    "nonlinear-first-seed.mp4": "ad70f6bd25bda291d6c95e9fda8b423ce3e29116677cc2d49b88f0730102c07f"
   },
   "expert_source_run": 34717099451,
   "student_source_run": 34721888010,
   "mp4": "Original simulator recordings, first evaluation seed, 10x slow motion.",
-  "gif": "Derived from expert-flight.mp4 using FFmpeg: 320px wide, 10fps, 32 colors; same playback duration."
+  "gif": "Derived from expert-flight.mp4 using FFmpeg: 320px wide, 10fps, 32 colors; same playback duration.",
+  "autonomous_source_run": 34747591540,
+  "nonlinear_source_run": 34755571903
 }

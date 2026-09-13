@@ -13,8 +13,9 @@ def check(condition, message):
     if not condition:
         raise ValueError(message)
 
-for name, expected in (("expert", True), ("superfly", False)):
-    folder = ROOT / "results" / ("2026-09-12-" + name)
+for name, expected in (("2026-09-12-expert", True), ("2026-09-12-superfly", False),
+                       ("2026-09-13-autonomous", False), ("2026-09-13-nonlinear", False)):
+    folder = ROOT / "results" / name
     provenance = json.loads((folder / "provenance.json").read_text())
     for filename, digest in provenance["files"].items():
         check(hashlib.sha256((folder / filename).read_bytes()).hexdigest() == digest,

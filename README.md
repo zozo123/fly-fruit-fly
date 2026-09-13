@@ -28,7 +28,7 @@ Think of the connectome as the network's **internal wiring diagram**. We keep th
 | Motor layer | Turns activity into 12 actuator commands | Yes |
 | Flybody simulator | Computes wing motion and body physics | Fixed |
 
-Our committed student uses **256 neurons and 1,949 directed edges**. In CS terms, it is a small RNN whose recurrent matrix comes from measured wiring.
+Our committed student uses **256 neurons and 1,949 directed edges**, followed by a learned **128-unit nonlinear motor readout**. In CS terms, it is a small RNN whose recurrent matrix comes from measured wiring.
 
 Each step combines new sensory input with `A @ h`, applies `tanh`, and blends that result with the previous activity. The motor layer reads this updated activity. Learned gain and leak parameters control the strength of recurrence and how quickly state changes. The controller acts every **0.2 ms**.
 
@@ -45,16 +45,17 @@ Optional PPO-style reinforcement fine-tuning and a shuffled-wiring control are i
 
 [![Released expert flying in MuJoCo at 10× slow motion](media/expert-preview.gif)](media/expert-flight.mp4)
 
-**[Play expert movie](media/expert-flight.mp4)** · **[Play connectome student attempt](media/superfly-student.mp4)**
+**[Play expert movie](media/expert-flight.mp4)** · **[Play latest connectome student’s first test episode](media/nonlinear-first-seed.mp4)**
 
 The animation above shows the **released expert**. Both movies are real simulator recordings of the first evaluation episode, at **10× slow motion**. Orange is the controlled fly; translucent is the target.
 
 | Controller | Flights passing the gate | Mean duration | Mean tracking error |
 | --- | ---: | ---: | ---: |
 | Released Flybody expert | **10/10** | 598.8 ms | 0.0269 cm |
-| Our connectome student | **0/10** | 83.24 ms | 0.3281 cm |
+| Connectome student, nonlinear readout | **5/10** | 361.34 ms | 0.1121 cm |
+| Earlier linear readout | 0/10 | 100.92 ms | 0.2110 cm |
 
-**The connectome student is implemented and trained, but has not learned stable flight yet.** Expert assistance helped it complete training rollouts; autonomous evaluation still failed.
+**The connectome student now completes five of ten held-out flights without expert assistance.** The 90% acceptance gate remains unmet. Three validation flights passed; the larger held-out test exposed failures on other initial phases. The linked student movie shows the first test seed, which failed; the score includes all ten episodes.
 
 The task starts airborne and follows a straight trajectory at 20 cm/s. The gate requires at least 10 episodes, with at least 90% completing ≥0.59 s and averaging ≤0.1 cm position error. These runs use different seeds; the table is descriptive. Some seeds map to the same initial wingbeat phase.
 
@@ -72,15 +73,15 @@ uv pip install -e '.[superfly,dev]'
 export MUJOCO_GL=egl
 
 superfly evaluate \
-  --graph results/2026-09-12-superfly/banc-v888-superfly.npz \
-  --checkpoint results/2026-09-12-superfly/superfly.pt \
-  --episodes 10 --seed 51234 --video --output runs/student
+  --graph results/2026-09-13-nonlinear/graph.npz \
+  --checkpoint results/2026-09-13-nonlinear/student.pt \
+  --episodes 10 --seed 80000 --video --output runs/student
 fly assess runs/student/metrics.json
 ```
 
-This replays the committed failed candidate. New checkpoints record neuron IDs; loading checks wiring and provenance before applying weights. Legacy checkpoints, including this one, lack explicit neuron IDs and receive wiring/provenance checks.
+This replays the committed 5/10 candidate. New checkpoints record neuron IDs; loading checks wiring and provenance before applying weights. Legacy checkpoints, including this one, lack explicit neuron IDs and receive wiring/provenance checks.
 
-**[Training commands, expert demo and detailed methodology →](docs/experiments.md)**
+**[Training commands and expert demo →](docs/experiments.md)** · [Autonomous checkpoint selection](docs/autonomous-training.md)
 
 ## What the biology contributes
 
@@ -90,7 +91,7 @@ We have not shown that biological wiring beats shuffled wiring. The implemented 
 
 ## Evidence and credit
 
-[Student checkpoint, graph, training and scores](results/2026-09-12-superfly/) · [Expert scores](results/2026-09-12-expert/) · [Media provenance](media/provenance.json)
+[Latest student checkpoint, graph, training and scores](results/2026-09-13-nonlinear/) · [Linear-readout experiment](results/2026-09-13-autonomous/) · [Original student](results/2026-09-12-superfly/) · [Expert scores](results/2026-09-12-expert/) · [Media provenance](media/provenance.json)
 
 ```bash
 python scripts/verify_flight_release.py

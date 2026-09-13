@@ -1,0 +1,15 @@
+{
+  "source_commit": "1cbb7488a2f0e3d646380bee0079b6b1e34fb860",
+  "workflow_url": "https://github.com/zozo123/fly-fruit-fly/actions/runs/34755571903",
+  "artifact_id": 10317556890,
+  "artifact_zip_sha256": "b43621129e44083dbb5e5b76251df5face9ab3ed1ed918a4fa50468ccbf36d00",
+  "files": {
+    "metrics.json": "db880a6f96528b184de7c34b4e2eafe62d0e4ab942a9983af6ae08e4643f7e21",
+    "graph.npz": "2b44c80b7db245b39bfada98e8c0168d6ebbcd355bba188ea743c2db4757cec2",
+    "student.pt": "3e4e3b5a0fd5e7f8b48d6106e898223f41d8efd34c099efd6641f493a752786a",
+    "training.json": "4cffe59b7515457c9f1132dbde229c029c0230a73219fb5a316e9ecd822f2bc5",
+    "assessment.json": "5fef12e86c1326a49838f4bc0c3eb5a7006c995059d36f73f6587020f64610bb",
+    "environment.txt": "e13038ab86d9868346bdb09339f4f407d96b5766a5ecf823eba0b16b7900fa84"
+  },
+  "note": "Five of ten held-out episodes passed. The 90 percent engineering gate was not met."
+}
