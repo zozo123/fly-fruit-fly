@@ -74,6 +74,15 @@ def validation_score(metrics):
     )
 
 
+def validation_protocol() -> dict:
+    """Keep readout tuning, round promotion, and final testing on disjoint seeds."""
+    return {
+        "ridge_selection_seeds": [30000, 30001, 30002],
+        "round_promotion_seeds": [31000, 31001, 31002],
+        "held_out_test_seeds": list(range(70000, 70010)),
+    }
+
+
 def teacher_mix_beta(round_index: int, *, start: float = 0.8, floor: float = 0.15) -> float:
     """Anneal teacher control without dropping abruptly onto a collapsed student."""
     if round_index < 0:
@@ -101,6 +110,11 @@ def main():
     if args.output.exists() and any(args.output.iterdir()):
         p.error("output directory must be empty")
     args.output.mkdir(parents=True, exist_ok=True)
+
+    protocol = validation_protocol()
+    ridge_seed = protocol["ridge_selection_seeds"][0]
+    promotion_seed = protocol["round_promotion_seeds"][0]
+    validation_episodes = len(protocol["ridge_selection_seeds"])
 
     torch.manual_seed(args.seed)
     graph = materialize_cape_subgraph(
@@ -146,11 +160,11 @@ def main():
         "normalization": "fixed after initial expert demonstrations",
         "transient_weighting": {"steps": 400, "initial_boost": 4.0},
         "teacher_mix_schedule": "max(0.15, 0.8 * 0.72**round)",
-        "validation_seeds": [30000, 30001, 30002],
-        "held_out_test_seeds": list(range(70000, 70010)),
+        "validation_protocol": protocol,
         "expert_actions_at_evaluation": False,
         "rl_steps": 0,
         "candidates": [],
+        "promotions": [],
         "corrective_rounds": [],
     }
     best_score = None
@@ -160,16 +174,16 @@ def main():
         x, y = readout_dataset(policy, aggregate)
         candidates = [None, 1e-7, 1e-5]
         round_state = copy.deepcopy(policy.state_dict())
-        round_best, round_score = None, None
+        round_best, round_score, round_label = None, None, None
         for ridge in candidates:
             policy.load_state_dict(round_state)
             loss = fit_readout(policy, x, y, ridge) if ridge else None
             label = f"round-{round_index:02d}-ridge-{ridge}"
             metrics = evaluate(
                 policy,
-                episodes=3,
-                seed=30000,
-                output=args.output / "validation" / label,
+                episodes=validation_episodes,
+                seed=ridge_seed,
+                output=args.output / "validation" / "ridge-selection" / label,
                 video=False,
                 asset_cache=args.cache,
             )
@@ -178,22 +192,46 @@ def main():
                 "name": label,
                 "ridge": ridge,
                 "training_action_mse": loss,
-                "validation_score": score,
+                "selection_score": score,
             }
             manifest["candidates"].append(candidate)
             print(json.dumps(candidate), flush=True)
             if round_score is None or score > round_score:
-                round_score, round_best = score, copy.deepcopy(policy.state_dict())
-            if best_score is None or score > best_score:
-                best_score, best_state = score, copy.deepcopy(policy.state_dict())
-                manifest["selected_candidate"] = label
-                save_cape_checkpoint(policy, graph, args.output / "student.pt", manifest)
-            (args.output / "training.json").write_text(json.dumps(manifest, indent=2) + "\n")
+                round_score = score
+                round_best = copy.deepcopy(policy.state_dict())
+                round_label = label
 
-        if best_score[0] == 3 or round_index == args.rounds:
+        # Ridge tuning and round-to-round promotion use disjoint simulator seeds.
+        # This keeps repeated readout comparisons from directly choosing the final
+        # checkpoint on the same tiny validation panel.
+        policy.load_state_dict(round_best)
+        promotion_metrics = evaluate(
+            policy,
+            episodes=len(protocol["round_promotion_seeds"]),
+            seed=promotion_seed,
+            output=args.output / "validation" / "round-promotion" / f"round-{round_index:02d}",
+            video=False,
+            asset_cache=args.cache,
+        )
+        promotion_score = validation_score(promotion_metrics)
+        promotion = {
+            "round": round_index,
+            "candidate": round_label,
+            "promotion_score": promotion_score,
+        }
+        manifest["promotions"].append(promotion)
+        print(json.dumps(promotion), flush=True)
+        if best_score is None or promotion_score > best_score:
+            best_score = promotion_score
+            best_state = copy.deepcopy(policy.state_dict())
+            manifest["selected_candidate"] = round_label
+            manifest["selected_round"] = round_index
+            save_cape_checkpoint(policy, graph, args.output / "student.pt", manifest)
+        (args.output / "training.json").write_text(json.dumps(manifest, indent=2) + "\n")
+
+        if best_score[0] == len(protocol["round_promotion_seeds"]) or round_index == args.rounds:
             break
 
-        policy.load_state_dict(round_best)
         beta = teacher_mix_beta(round_index)
         corrective, _ = collect_corrective_rollouts(
             policy,
@@ -229,8 +267,8 @@ def main():
     save_cape_checkpoint(policy, graph, args.output / "student.pt", manifest)
     metrics = evaluate(
         policy,
-        episodes=10,
-        seed=70000,
+        episodes=len(protocol["held_out_test_seeds"]),
+        seed=protocol["held_out_test_seeds"][0],
         output=args.output / "evaluation",
         video=True,
         asset_cache=args.cache,
