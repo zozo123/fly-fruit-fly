@@ -50,17 +50,26 @@ def test_validation_prioritizes_real_completion_over_reward():
     assert validation_score(report(True,.5988,.09)) > validation_score(report(False,.58,.01))
 
 
-def test_validation_protocol_keeps_tuning_promotion_and_test_seeds_disjoint():
+def test_validation_protocol_keeps_all_seed_domains_disjoint():
     protocol = validation_protocol()
-    tuning = set(protocol['ridge_selection_seeds'])
-    promotion = set(protocol['round_promotion_seeds'])
-    held_out = set(protocol['held_out_test_seeds'])
-    assert len(tuning) == 3
-    assert len(promotion) == 3
-    assert len(held_out) == 10
-    assert tuning.isdisjoint(promotion)
-    assert tuning.isdisjoint(held_out)
-    assert promotion.isdisjoint(held_out)
+    panels = {
+        name: set(seeds)
+        for name, seeds in protocol.items()
+    }
+    assert len(panels['ridge_selection_seeds']) == 3
+    assert len(panels['round_promotion_seeds']) == 3
+    assert len(panels['development_test_seeds']) == 10
+    assert len(panels['confirmation_test_seeds']) == 10
+    names = list(panels)
+    for i, first in enumerate(names):
+        for second in names[i + 1:]:
+            assert panels[first].isdisjoint(panels[second])
+
+
+def test_confirmation_panel_is_fresh_relative_to_consumed_development_panel():
+    protocol = validation_protocol()
+    assert protocol['development_test_seeds'] == list(range(70000, 70010))
+    assert protocol['confirmation_test_seeds'] == list(range(71000, 71010))
 
 
 def test_seed_panels_must_match_evaluate_consecutive_seed_semantics():
@@ -75,6 +84,6 @@ def test_seed_panels_must_match_evaluate_consecutive_seed_semantics():
 
 def test_validation_protocol_rejects_any_cross_panel_overlap():
     protocol = validation_protocol()
-    protocol['round_promotion_seeds'] = [30002, 30003, 30004]
+    protocol['confirmation_test_seeds'] = [70009, 70010, 70011]
     with pytest.raises(ValueError, match='overlap'):
         validate_validation_protocol(protocol)
