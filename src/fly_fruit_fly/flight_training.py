@@ -17,7 +17,7 @@ from .circuit import (
     save_cape_checkpoint,
 )
 from .curriculum import collect_corrective_rollouts, _rollout_summary
-from .superfly import _make_env, collect_teacher_rollouts, evaluate
+from .superfly import _make_env, collect_teacher_rollouts, evaluate, ppo_finetune
 
 
 GATE_DURATION_S = 0.59
@@ -64,12 +64,7 @@ def fit_readout(policy, x, y, ridge):
 
 
 def _episode_gate_progress(episode: dict) -> float:
-    """Continuous progress toward satisfying both flight-gate bottlenecks.
-
-    A controller cannot compensate for poor tracking merely by surviving longer,
-    or vice versa. The minimum normalized margin therefore measures the limiting
-    criterion and is clipped at one once both numeric thresholds are satisfied.
-    """
+    """Continuous progress toward satisfying both flight-gate bottlenecks."""
     duration = max(0.0, float(episode["duration_s"]))
     error = max(0.0, float(episode["mean_tracking_error_cm"]))
     duration_progress = duration / GATE_DURATION_S
@@ -101,10 +96,7 @@ def validation_protocol() -> dict:
     protocol = {
         "ridge_selection_seeds": [30000, 30001, 30002],
         "round_promotion_seeds": [31000, 31001, 31002],
-        # Seeds 70000-70009 have been inspected during development and are retained
-        # as a regression/development gate, not described as untouched evidence.
         "development_test_seeds": list(range(70000, 70010)),
-        # This panel is only evaluated after the development gate passes.
         "confirmation_test_seeds": list(range(71000, 71010)),
     }
     validate_validation_protocol(protocol)
@@ -112,7 +104,6 @@ def validation_protocol() -> dict:
 
 
 def _validate_seed_panel(name: str, seeds) -> list[int]:
-    """Validate the exact seed panel semantics supported by evaluate(seed, episodes)."""
     if not isinstance(seeds, (list, tuple)) or not seeds:
         raise ValueError(f"{name} must be a non-empty seed sequence")
     if any(type(seed) is not int or seed < 0 for seed in seeds):
@@ -129,7 +120,6 @@ def _validate_seed_panel(name: str, seeds) -> list[int]:
 
 
 def validate_validation_protocol(protocol: dict) -> dict:
-    """Reject overlapping or ambiguous tuning/promotion/test seed definitions."""
     required = (
         "ridge_selection_seeds",
         "round_promotion_seeds",
@@ -150,7 +140,6 @@ def validate_validation_protocol(protocol: dict) -> dict:
 
 
 def evaluate_seed_panel(policy, seeds, *, output: Path, video: bool, asset_cache: Path):
-    """Evaluate exactly one validated consecutive seed panel."""
     panel = _validate_seed_panel("evaluation_seeds", seeds)
     metrics = evaluate(
         policy,
@@ -186,11 +175,9 @@ def teacher_mix_beta(
         raise ValueError("teacher mixing must satisfy 0 <= floor <= start <= 1")
     if divergence_limit <= 0:
         raise ValueError("divergence_limit must be positive")
-
     scheduled = float(max(floor, start * (decay ** round_index)))
     if previous_summary is None:
         return scheduled
-
     previous_beta = float(previous_summary["beta"])
     completion = float(previous_summary["completion_rate"])
     divergence = float(previous_summary["mean_student_teacher_l1"])
@@ -198,10 +185,6 @@ def teacher_mix_beta(
         raise ValueError("invalid previous corrective-rollout summary")
     if divergence < 0 or not np.isfinite(divergence):
         raise ValueError("invalid student/teacher divergence")
-
-    # A failed corrective rollout means the scheduled anneal was too aggressive:
-    # step one schedule level back toward the teacher. Rising divergence without an
-    # outright failure freezes support instead of continuing to remove supervision.
     if completion < 1.0:
         return float(min(start, max(scheduled, previous_beta / decay)))
     if divergence > divergence_limit:
@@ -216,6 +199,7 @@ def main():
     p.add_argument("--nodes", type=int, default=384)
     p.add_argument("--rounds", type=int, default=8)
     p.add_argument("--circuit-substeps", type=int, default=4)
+    p.add_argument("--rl-steps", type=int, default=4096)
     p.add_argument("--seed", type=int, default=1234)
     args = p.parse_args()
     if args.nodes < 32:
@@ -224,12 +208,13 @@ def main():
         p.error("rounds must be between 0 and 20")
     if args.circuit_substeps < 1 or args.circuit_substeps > 16:
         p.error("circuit-substeps must be between 1 and 16")
+    if args.rl_steps < 0:
+        p.error("rl-steps must be non-negative")
     if args.output.exists() and any(args.output.iterdir()):
         p.error("output directory must be empty")
     args.output.mkdir(parents=True, exist_ok=True)
 
     protocol = validation_protocol()
-
     torch.manual_seed(args.seed)
     graph = materialize_cape_subgraph(
         args.cache,
@@ -262,7 +247,7 @@ def main():
         transient_boost=4.0,
     )
     manifest = {
-        "algorithm": "cape_role_routed_transient_distillation_dagger_ridge",
+        "algorithm": "cape_role_routed_distillation_adaptive_dagger_ridge_then_guarded_ppo",
         "seed": args.seed,
         "graph_nodes": graph.n_nodes,
         "graph_edges": graph.n_edges,
@@ -282,7 +267,9 @@ def main():
         "validation_protocol": protocol,
         "confirmation_policy": "evaluate only after development gate passes",
         "expert_actions_at_evaluation": False,
-        "rl_steps": 0,
+        "rl_steps": args.rl_steps,
+        "rl_history": [],
+        "rl_promotion": None,
         "candidates": [],
         "promotions": [],
         "corrective_rounds": [],
@@ -377,6 +364,42 @@ def main():
         (args.output / "training.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     policy.load_state_dict(best_state)
+    if args.rl_steps:
+        pre_rl_state = copy.deepcopy(policy.state_dict())
+        manifest["rl_history"] = ppo_finetune(
+            policy,
+            total_steps=args.rl_steps,
+            seed=args.seed + 30_000,
+            asset_cache=args.cache,
+            learning_rate=5e-5,
+            rollout_steps=512,
+            epochs=3,
+            batch_size=128,
+        )
+        rl_metrics = evaluate_seed_panel(
+            policy,
+            protocol["round_promotion_seeds"],
+            output=args.output / "validation" / "ppo-promotion",
+            video=False,
+            asset_cache=args.cache,
+        )
+        rl_score = validation_score(rl_metrics)
+        accepted = rl_score > best_score
+        manifest["rl_promotion"] = {
+            "steps": args.rl_steps,
+            "score": rl_score,
+            "pre_rl_score": best_score,
+            "accepted": accepted,
+        }
+        if accepted:
+            best_score = rl_score
+            best_state = copy.deepcopy(policy.state_dict())
+            manifest["selected_candidate"] = "ppo-finetuned"
+        else:
+            policy.load_state_dict(pre_rl_state)
+        print(json.dumps({"rl_promotion": manifest["rl_promotion"]}), flush=True)
+
+    policy.load_state_dict(best_state)
     save_cape_checkpoint(policy, graph, args.output / "student.pt", manifest)
 
     development_metrics = evaluate_seed_panel(
@@ -412,15 +435,10 @@ def main():
 
     (args.output / "assessment.json").write_text(json.dumps(final_result, indent=2) + "\n")
     (args.output / "training.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print(
-        json.dumps(
-            {
-                "development_assessment": development_result,
-                "confirmation_assessment": manifest["confirmation_assessment"],
-            }
-        ),
-        flush=True,
-    )
+    print(json.dumps({
+        "development_assessment": development_result,
+        "confirmation_assessment": manifest["confirmation_assessment"],
+    }), flush=True)
 
 
 if __name__ == "__main__":
