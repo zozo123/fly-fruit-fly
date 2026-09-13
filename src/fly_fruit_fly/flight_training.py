@@ -1,4 +1,4 @@
-"""Train CAPE SuperFly with autonomous validation and untouched held-out tests."""
+"""Train CAPE SuperFly with autonomous validation and staged held-out tests."""
 from __future__ import annotations
 
 import argparse
@@ -75,11 +75,15 @@ def validation_score(metrics):
 
 
 def validation_protocol() -> dict:
-    """Keep readout tuning, round promotion, and final testing on disjoint seeds."""
+    """Keep tuning, promotion, development, and confirmation seeds disjoint."""
     protocol = {
         "ridge_selection_seeds": [30000, 30001, 30002],
         "round_promotion_seeds": [31000, 31001, 31002],
-        "held_out_test_seeds": list(range(70000, 70010)),
+        # Seeds 70000-70009 have been inspected during development and are retained
+        # as a regression/development gate, not described as untouched evidence.
+        "development_test_seeds": list(range(70000, 70010)),
+        # This panel is only evaluated after the development gate passes.
+        "confirmation_test_seeds": list(range(71000, 71010)),
     }
     validate_validation_protocol(protocol)
     return protocol
@@ -107,10 +111,13 @@ def validate_validation_protocol(protocol: dict) -> dict:
     required = (
         "ridge_selection_seeds",
         "round_promotion_seeds",
-        "held_out_test_seeds",
+        "development_test_seeds",
+        "confirmation_test_seeds",
     )
     if not isinstance(protocol, dict) or set(protocol) != set(required):
-        raise ValueError("validation protocol must define exactly tuning, promotion, and test panels")
+        raise ValueError(
+            "validation protocol must define exactly tuning, promotion, development, and confirmation panels"
+        )
     panels = {name: _validate_seed_panel(name, protocol[name]) for name in required}
     names = list(required)
     for i, first in enumerate(names):
@@ -214,6 +221,7 @@ def main():
         "transient_weighting": {"steps": 400, "initial_boost": 4.0},
         "teacher_mix_schedule": "max(0.15, 0.8 * 0.72**round)",
         "validation_protocol": protocol,
+        "confirmation_policy": "evaluate only after development gate passes",
         "expert_actions_at_evaluation": False,
         "rl_steps": 0,
         "candidates": [],
@@ -310,17 +318,49 @@ def main():
 
     policy.load_state_dict(best_state)
     save_cape_checkpoint(policy, graph, args.output / "student.pt", manifest)
-    metrics = evaluate_seed_panel(
+
+    development_metrics = evaluate_seed_panel(
         policy,
-        protocol["held_out_test_seeds"],
-        output=args.output / "evaluation",
+        protocol["development_test_seeds"],
+        output=args.output / "development-evaluation",
         video=True,
         asset_cache=args.cache,
     )
-    result = assess(metrics)
-    (args.output / "assessment.json").write_text(json.dumps(result, indent=2) + "\n")
+    development_result = assess(development_metrics)
+    manifest["development_assessment"] = development_result
+    (args.output / "development-assessment.json").write_text(
+        json.dumps(development_result, indent=2) + "\n"
+    )
+
+    final_result = development_result
+    if development_result["task_gate_passed"]:
+        confirmation_metrics = evaluate_seed_panel(
+            policy,
+            protocol["confirmation_test_seeds"],
+            output=args.output / "confirmation",
+            video=True,
+            asset_cache=args.cache,
+        )
+        confirmation_result = assess(confirmation_metrics)
+        manifest["confirmation_assessment"] = confirmation_result
+        (args.output / "confirmation-assessment.json").write_text(
+            json.dumps(confirmation_result, indent=2) + "\n"
+        )
+        final_result = confirmation_result
+    else:
+        manifest["confirmation_assessment"] = None
+
+    (args.output / "assessment.json").write_text(json.dumps(final_result, indent=2) + "\n")
     (args.output / "training.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print(json.dumps({"held_out_assessment": result}), flush=True)
+    print(
+        json.dumps(
+            {
+                "development_assessment": development_result,
+                "confirmation_assessment": manifest["confirmation_assessment"],
+            }
+        ),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
