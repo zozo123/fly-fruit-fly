@@ -185,6 +185,7 @@ def train_curriculum(args):
             epochs=args.dagger_epochs,
             learning_rate=args.distill_lr,
             bptt_steps=args.bptt_steps,
+            reset_normalization=False,
         )
         rounds.append({
             "round": round_index + 1,

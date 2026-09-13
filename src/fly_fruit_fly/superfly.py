@@ -237,10 +237,12 @@ def distill(
     epochs: int = 4,
     learning_rate: float = 3e-4,
     bptt_steps: int = 64,
+    reset_normalization: bool = True,
 ) -> list[float]:
     """Sequentially imitate the released expert with truncated BPTT."""
-    mean, std = _observation_stats(rollouts)
-    policy.set_observation_normalization(mean, std)
+    if reset_normalization:
+        mean, std = _observation_stats(rollouts)
+        policy.set_observation_normalization(mean, std)
     optimizer = torch.optim.Adam(policy.parameters(), lr=learning_rate)
     losses = []
     policy.train()
