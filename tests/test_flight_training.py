@@ -4,7 +4,13 @@ import torch
 
 from fly_fruit_fly.connectome import ConnectomeGraph
 from fly_fruit_fly.superfly import SuperFlyPolicy, distill
-from fly_fruit_fly.flight_training import fit_readout, validation_protocol, validation_score
+from fly_fruit_fly.flight_training import (
+    _validate_seed_panel,
+    fit_readout,
+    validate_validation_protocol,
+    validation_protocol,
+    validation_score,
+)
 
 
 def policy():
@@ -55,3 +61,20 @@ def test_validation_protocol_keeps_tuning_promotion_and_test_seeds_disjoint():
     assert tuning.isdisjoint(promotion)
     assert tuning.isdisjoint(held_out)
     assert promotion.isdisjoint(held_out)
+
+
+def test_seed_panels_must_match_evaluate_consecutive_seed_semantics():
+    assert _validate_seed_panel('panel', [10, 11, 12]) == [10, 11, 12]
+    with pytest.raises(ValueError, match='consecutive'):
+        _validate_seed_panel('panel', [10, 12])
+    with pytest.raises(ValueError, match='duplicate'):
+        _validate_seed_panel('panel', [10, 10])
+    with pytest.raises(ValueError, match='non-negative integer'):
+        _validate_seed_panel('panel', [10, -1])
+
+
+def test_validation_protocol_rejects_any_cross_panel_overlap():
+    protocol = validation_protocol()
+    protocol['round_promotion_seeds'] = [30002, 30003, 30004]
+    with pytest.raises(ValueError, match='overlap'):
+        validate_validation_protocol(protocol)
