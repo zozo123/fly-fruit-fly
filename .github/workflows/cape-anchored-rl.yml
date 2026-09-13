@@ -1,0 +1,72 @@
+name: CAPE anchored PPO experiment
+
+on:
+  pull_request:
+    paths:
+      - 'src/fly_fruit_fly/cape_rl.py'
+      - 'tests/test_cape_rl.py'
+      - '.github/workflows/cape-anchored-rl.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cape-anchored-rl-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  train:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      MUJOCO_GL: egl
+      OMP_NUM_THREADS: '2'
+      TF_NUM_INTRAOP_THREADS: '2'
+      TF_NUM_INTEROP_THREADS: '1'
+      TF_CPP_MIN_LOG_LEVEL: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install and test anchored refinement
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1-mesa libgl1-mesa-dri ffmpeg
+          python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e '.[superfly,dev]'
+          pytest -q tests/test_cape_rl.py tests/test_circuit.py tests/test_flight_training.py tests/test_superfly.py
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/fly-fruit-fly/banc-v888
+          key: banc-v888-paper-v2
+      - name: Train CAPE with imitation-anchored PPO
+        run: |
+          python -m fly_fruit_fly.cape_rl \
+            --exploration-std 0.05 \
+            --target-kl 0.02 \
+            --kl-coef 2.0 \
+            --nodes 384 \
+            --rounds 8 \
+            --circuit-substeps 4 \
+            --rl-steps 4096 \
+            --output runs/anchored
+          python -m pip freeze > runs/anchored/environment.txt
+      - name: Apply unchanged staged flight gate
+        run: |
+          if [ -f runs/anchored/confirmation/metrics.json ]; then
+            fly assess runs/anchored/confirmation/metrics.json --require-pass
+          else
+            fly assess runs/anchored/development-evaluation/metrics.json --require-pass
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cape-anchored-ppo
+          path: runs/anchored
+          retention-days: 30
+          if-no-files-found: warn
