@@ -1,0 +1,12 @@
+{
+  "source_commit": "86925072791b8166537cba948c249daf8106044b",
+  "workflow_url": "https://github.com/zozo123/fly-fruit-fly/actions/runs/34717099451",
+  "artifact_id": 10305771087,
+  "artifact_zip_sha256": "abb88e1e180d9eab615d8b306d70758862701b2aef51a28e9253e93619a0171e",
+  "files": {
+    "assessment.json": "ce4d5eec4d7d25d4372478f4c4c4f70281ae33351305f1e98c104bde8b8b7bc7",
+    "metrics.json": "270e3aa78a4173fc8ea32d1af1b6ee493b186e12fc292087dcc2b671d3c79e97",
+    "environment.txt": "35dc0f79b09c7742b8ce6a40b82dbff5f847b5cdabd05398b8c2ce2406e6f327"
+  },
+  "note": "Raw observed outputs from the recorded source commit. Subsequent training fixes do not change these historical measurements."
+}

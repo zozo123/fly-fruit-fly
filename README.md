@@ -1,162 +1,122 @@
-# fly-fruit-fly
+# SuperFly · fly-fruit-fly
 
-**Teach a physics-based fruit fly to fly. Current status: the experiment is real; stable flight is not solved yet.**
+**A working simulated flight demo, with an experimental controller built on measured fruit-fly wiring.**
 
-This repository wraps [Flybody](https://github.com/TuragaLab/flybody)'s MuJoCo fruit fly and wingbeat generator with a small PPO controller. It contains executable code, trained checkpoints, raw metrics, simulator videos, failure evidence, and explicit pass/fail criteria.
+The released [Flybody](https://github.com/TuragaLab/flybody) expert passes **10/10 straight flights**: **0.5988 s** each, **0.0269 cm** mean tracking error. SuperFly learns from that expert through a fixed sparse BANC connectome; its current autonomous student passes **0/10**. Both results are recorded below.
 
-It does **not** claim to contain a reconstructed fruit-fly brain or a working connectome controller.
+[![Successful Flybody expert flight, shown at 10× slow motion](media/expert-preview.gif)](media/expert-flight.mp4)
 
-[![Real simulator comparison: both controllers fail](media/preview.gif)](media/comparison.mp4)
+**[Play the flight movie](media/expert-flight.mp4)** · [Student movie](media/superfly-student.mp4) · [Verified expert run](https://github.com/zozo123/fly-fruit-fly/actions/runs/34717099451)
 
-**[Play the comparison MP4](media/comparison.mp4)** · [Untrained baseline](media/baseline.mp4) · [8,192-step PPO attempt](media/ppo-8192.mp4)
+The animation plays directly in this README. Click it for the MP4. These are actual MuJoCo frames from the first evaluation episode: orange is the controlled fly, translucent is the reference. Playback is **10× slower than simulation**; the six-second movie represents about 0.6 seconds of flight.
 
-The video is real Flybody/MuJoCo output, approximately **10× slower than simulated time**. Orange is the simulated fly; the translucent fly is the target trajectory. The first evaluation seed is shown, not a cherry-picked success. Each panel freezes after termination and labels the failure; frozen frames are not extra flight time.
+## Run the working flight demo
 
-## Result so far: longer survival, worse tracking
-
-The sustained experiment continued the original checkpoint from **8,192 to 73,728 total PPO steps**, then evaluated the learned policy and untrained wingbeat baseline on the same ten held-out initial wingbeat phases.
-
-[Actions run 34712024080](https://github.com/zozo123/fly-fruit-fly/actions/runs/34712024080) completed successfully as an experiment, but the **flight gate failed 0/10**.
-
-| Measurement | Untrained wingbeat | PPO, 73,728 total steps | Delta |
-| --- | ---: | ---: | ---: |
-| Passed 0.6 s straight-flight gate | 0 / 10 | 0 / 10 | — |
-| Mean survival | 52.86 ms | 72.44 ms | +19.58 ms |
-| Mean return | 95.49 | 108.70 | +13.21 |
-| Mean episode tracking error¹ | 0.291 cm | 0.394 cm | **+0.104 cm worse** |
-
-¹ Mean of each episode's mean target-position error over its own lifetime. Because episodes have different durations, this is descriptive rather than a matched-time statistical comparison.
-
-**Interpretation:** the old controller learned behavior that survived somewhat longer and accumulated more reward, but it moved farther from the target and every episode crashed after roughly 60–83 ms—far short of the 0.6 s goal. Reward alone is therefore not a promotion criterion.
-
-The full evidence is committed under [`results/2026-09-12-sustained/`](results/2026-09-12-sustained/): [baseline](results/2026-09-12-sustained/baseline.json), [PPO](results/2026-09-12-sustained/ppo.json), [assessment](results/2026-09-12-sustained/assessment.json), [training config](results/2026-09-12-sustained/training.json), [environment](results/2026-09-12-sustained/environment.txt), and [provenance](results/2026-09-12-sustained/provenance.json). The provenance records source commit `3eb7fc5`, Actions artifact `10303364175`, and GitHub's artifact SHA-256 digest.
-
-Verify both the original smoke evidence and sustained result without installing MuJoCo:
+Tested on Ubuntu 22.04, Python 3.11, CPU, headless EGL. Start in a clone of this repository.
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y libegl1-mesa libgl1-mesa-dri ffmpeg
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+uv pip install -e '.[expert,dev]'
+export MUJOCO_GL=egl
+
+fly evaluate --expert --episodes 10 --seed 40000 --video --output runs/expert
+fly assess runs/expert/metrics.json --require-pass
+```
+
+Open `runs/expert/flight.mp4`. The command downloads the released expert (about 6.5 MB) and retrieves the small official FMech wing-pattern member using HTTP ranges. No connectome download is needed for this demo. The expert archive is SHA-256 pinned; wing-pattern provenance records its SHA-256 and ZIP-member CRC, without claiming verification of the entire dataset archive.
+
+## What is verified
+
+| Controller | Passing episodes | Mean flight duration | Mean episode tracking error |
+| --- | ---: | ---: | ---: |
+| Released Flybody expert | **10/10** | **598.8 ms** | **0.0269 cm** |
+| SuperFly BANC student, corrective imitation | 0/10 | 83.24 ms | 0.3281 cm |
+| Earlier PPO, 73,728 total steps | 0/10 | 72.44 ms | 0.394 cm |
+
+These are separate experiments with different evaluation seeds and, for the earlier PPO, a different wing pattern. The table is descriptive; it does not establish a paired improvement or an advantage from biological wiring.
+
+The fixed gate requires at least 10 episodes and a 90% pass rate. A passing episode completes the reference, lasts at least 0.59 s, and averages at most 0.1 cm target-position error. Reward alone cannot pass the gate. `--require-pass` exits 2 on failure.
+
+The target is airborne straight flight at 20 cm/s, starting at 1 cm height. Evaluation varies initial wingbeat phase; some seeds produce the same discrete phase. This establishes performance on this task only. Takeoff, hovering, maneuvers, disturbances, and general flight remain unvalidated.
+
+## The SuperFly model
+
+SuperFly uses a selected subgraph of **BANC v888 measured neuron-to-neuron connectivity** as a fixed sparse recurrent matrix. The committed student has **256 nodes and 1,949 directed edges**.
+
+```mermaid
+flowchart LR
+    O["Body observations"] --> S["Learned sensory projection"]
+    S --> C["Fixed BANC recurrent wiring"]
+    C --> M["Learned motor readout"]
+    M --> P["12 actions · Flybody physics"]
+    P --> O
+```
+
+Sensory projection, recurrent gain, node leak/bias, and motor/value readouts are trainable. The measured adjacency is a buffer. Positive input-normalized edge weights are used as an engineering structural prior; neurotransmitter signs and biological neural dynamics are not reconstructed.
+
+Training collects expert demonstrations, fits native actuator actions with truncated backpropagation, then adds DAgger corrective labels on states visited by mixed teacher/student control. Optional PPO-style fine-tuning uses stored recurrent states for one-step updates. A directed degree-preserving shuffled graph is available as a control; no completed comparison establishes that measured wiring helps.
+
+The current corrective run used two teacher episodes and three DAgger rounds, with **zero RL fine-tuning steps**. Teacher-assisted rollouts completed, but autonomous evaluation failed. Lower imitation loss alone did not establish flight.
+
+## Replay the committed student
+
+```bash
+uv pip install -e '.[superfly,dev]'
+superfly evaluate \
+  --graph results/2026-09-12-superfly/banc-v888-superfly.npz \
+  --checkpoint results/2026-09-12-superfly/superfly.pt \
+  --episodes 10 --seed 51234 --video --output runs/student-replay
+fly assess runs/student-replay/metrics.json
+```
+
+The checkpoint includes learned parameters and observation normalization. Keep it with its matching graph. It is a failed research candidate, ready for inspection and continued experimentation.
+
+## Train a new student
+
+This path additionally downloads BANC metadata and the neuron edgelist, and materializes the selected subgraph with source/version/hash provenance.
+
+```bash
+python -m fly_fruit_fly.curriculum \
+  --nodes 256 --min-synapses 5 \
+  --teacher-episodes 2 --distill-epochs 6 --bptt-steps 64 \
+  --dagger-rounds 3 --dagger-episodes 1 --dagger-epochs 2 \
+  --dagger-start-beta 0.8 --dagger-end-beta 0.0 \
+  --rl-steps 0 --eval-episodes 10 --seed 1234 --video \
+  --output runs/superfly-corrective
+fly assess runs/superfly-corrective/evaluation/metrics.json --require-pass
+```
+
+Use a fresh output directory for each experiment. Add `--shuffled` for the wiring control. The historical candidate predates fixes that seed parameter initialization and bootstrap time-limit value estimates; fresh training is not expected to reproduce its weights exactly. No new flight-performance claim is made for those fixes.
+
+[SuperFly workflow](.github/workflows/superfly.yml) also supports a manually dispatched real-versus-shuffled training experiment. Workflow completion means the experiment ran; inspect its flight metrics before promoting a model.
+
+## Evidence and verification
+
+- [Expert metrics, assessment, environment and provenance](results/2026-09-12-expert/)
+- [Student metrics, assessment, training, checkpoint, graph and provenance](results/2026-09-12-superfly/)
+- [Student training run and full artifact](https://github.com/zozo123/fly-fruit-fly/actions/runs/34721888010) — includes corrective dataset and trajectory trace; Actions artifacts have limited retention.
+- [Earlier PPO evidence](results/2026-09-12-sustained/) · [Original smoke checkpoint](results/2026-09-12-smoke/) · [Earlier failure movie](media/comparison.mp4)
+- [Media checksums and recording provenance](media/provenance.json)
+
+Verify the committed reports and file hashes without installing the simulator:
+
+```bash
+python scripts/verify_flight_release.py
 python scripts/verify_results.py
 ```
 
-## The next controller: wings only, slower policy
+Run code and simulator tests with `pytest -q`. Evidence retains the exact source commit and original artifact SHA-256. Videos illustrate behavior; metrics determine the gate.
 
-Flybody itself must still run its wingbeat generator and physics at the native **0.2 ms control interval**. PPO does not need to make a brand-new high-level decision every 0.2 ms.
+## Sources and credit
 
-The new controller keeps the inner simulator unchanged but gives PPO a cleaner interface:
+Flybody is developed by HHMI Janelia and Google DeepMind and distributed under Apache-2.0. The successful controller is their released pretrained expert. This project supplies integration, evaluation, and experimental student training.
 
-```text
-observations
-    │
-    ▼
-  PPO policy ───────── every 2 ms ─────────┐
-    │                                       │
-    ├─ 6 wing residuals                    │ held for 10 inner ticks
-    └─ 1 wingbeat-frequency command         │
-                                            ▼
-                              Flybody WBPG + MuJoCo
-                                   every 0.2 ms
-```
+- [Pinned Flybody source](https://github.com/TuragaLab/flybody/tree/d015e9bfe441bd90ae431bac24c55cb74bdbce26)
+- [Whole-body physics simulation of fruit fly locomotion](https://doi.org/10.1038/s41586-025-09029-4)
+- [Released Flybody assets](https://janelia.figshare.com/articles/dataset/25309105)
+- [BANC paper](https://doi.org/10.1038/s41586-026-10735-w) · [BANC static data](https://doi.org/10.7910/DVN/7WTH1N)
 
-`--control-mode wings` exposes exactly the six Flybody wing residual channels plus the documented `user_0` wingbeat-frequency command: **7 policy actions total**. Head/abdomen/non-flight actuator channels are held at zero. `--action-repeat 10` holds each policy decision for ten native Flybody ticks, giving PPO a **2 ms policy interval** while preserving 0.2 ms wingbeat/physics integration.
-
-This changes the learning problem from roughly **3,000 PPO decisions per 0.6 s episode to ~300**, while evaluation still accumulates tracking error and reward across every inner 0.2 ms tick. The metric is not made easier by downsampling.
-
-At 2 ms per policy step, `gamma=0.99` has an approximate 0.2 s discount horizon. A 512-step PPO rollout spans about 1.024 s of simulated policy time and can cross episode boundaries. The 1-D `frequency` mode is also available as an ablation; it is not the primary controller.
-
-## Run the current best experiment
-
-Tested CI configuration: Linux, Python 3.11, CPU Torch, headless MuJoCo/EGL.
-
-```bash
-uv venv --python 3.11
-source .venv/bin/activate
-uv pip install -e '.[dev]'
-export MUJOCO_GL=egl
-
-# 1. Measure the matched untrained 7-D flight interface.
-fly evaluate \
-  --control-mode wings \
-  --action-repeat 10 \
-  --episodes 10 \
-  --seed 30000 \
-  --output runs/baseline
-
-# 2. Train a fresh controller. Old checkpoints use a different policy interface.
-fly train \
-  --control-mode wings \
-  --action-repeat 10 \
-  --steps 8192 \
-  --gamma 0.99 \
-  --gae-lambda 0.95 \
-  --checkpoint-every 2048 \
-  --output runs/candidate
-
-# 3. Evaluate on exactly the same held-out phases and record a real video.
-fly evaluate \
-  --checkpoint runs/candidate \
-  --episodes 10 \
-  --seed 30000 \
-  --video \
-  --output runs/evaluation
-
-# 4. Apply the fixed engineering gate.
-fly assess \
-  runs/evaluation/metrics.json \
-  --baseline runs/baseline/metrics.json \
-  --require-pass
-```
-
-`assess --require-pass` exits **2** when flight fails. Without that flag it records the result without turning a scientifically valid failed experiment into a broken workflow.
-
-The same experiment is encoded in [`.github/workflows/policy-rate-flight.yml`](.github/workflows/policy-rate-flight.yml). It uploads all metrics, traces, checkpoints, normalization statistics, environment versions, and the first evaluation video whether the task passes or fails.
-
-## What counts as "learned to fly"
-
-The declared straight-flight gate is deliberately independent of reward:
-
-- at least **10 held-out episodes**;
-- at least **90%** must complete **≥ 0.59 s** of the 0.6 s reference;
-- each passing episode must average **≤ 0.1 cm** target-position error.
-
-This is an engineering milestone for one synthetic straight-flight task. Passing it would **not** prove takeoff, hovering, maneuverability, disturbance robustness, general flight, or biological fidelity.
-
-Candidate/baseline comparison also requires exactly matching evaluation seeds, task configuration, controller mode, and action-repeat value. Malformed/non-finite reports, duplicate seeds, and mismatched comparisons are rejected.
-
-## Model and environment
-
-- Target: ~0.6 s at **20 cm/s**, starting airborne at **1 cm** center-of-mass height.
-- Flybody units are centimeters, grams, and seconds.
-- This project supplies a full 0.6 s synthetic reference; upstream's stock synthetic reference is much shorter.
-- Flybody's wingbeat pattern generator supplies periodic wing motion. PPO learns corrections rather than inventing every wingstroke from scratch.
-- The current PPO is a small two-layer **64×64 MLP** with normalized observations/rewards and CPU inference/training.
-- Crashes are terminal failures. Reaching the time/reference limit is a truncation so PPO can bootstrap correctly.
-- Evaluation emits `metrics.json` and `trajectory.csv`; video is evidence, not the scoring mechanism.
-- Checkpoints are only reusable with their matching `normalize.pkl` and controller configuration.
-
-The original smoke checkpoint and its evidence remain in [`results/2026-09-12-smoke/`](results/2026-09-12-smoke/). That run evaluated three phases and also failed all three; it is retained rather than replaced by the longer run.
-
-## Replaying an existing checkpoint
-
-```bash
-fly evaluate \
-  --checkpoint results/2026-09-12-smoke \
-  --episodes 3 \
-  --video \
-  --output runs/replay
-```
-
-The legacy checkpoint is interpreted as `control_mode=full, action_repeat=1`. Resuming is allowed only when the action space and policy timestep match the saved controller metadata; changing to the 7-D wing controller requires fresh training.
-
-## Connectome: only after embodied control works
-
-A connectome is a later controlled experiment, not a marketing label for the PPO baseline. Once an embodied flight controller passes a meaningful task, collect observation/action pairs from it and compare a fixed sparse connectome model against both the PPO teacher and a size-matched random reservoir on unseen trajectories and disturbances.
-
-Wiring alone does not specify synaptic signs, neuron dynamics, sensory encoding, motor decoding, or learning rules. Those assumptions must be explicit and separately tested.
-
-## Sources
-
-Flybody is developed by HHMI Janelia and Google DeepMind and distributed under Apache-2.0. This repository pins upstream commit [`d015e9b`](https://github.com/TuragaLab/flybody/tree/d015e9bfe441bd90ae431bac24c55cb74bdbce26).
-
-- [Whole-body physics simulation of fruit fly locomotion, Nature (2025)](https://doi.org/10.1038/s41586-025-09029-4)
-- [Flybody flight environments](https://github.com/TuragaLab/flybody/blob/d015e9bfe441bd90ae431bac24c55cb74bdbce26/flybody/fly_envs.py)
-- [Flight imitation task / wingbeat controller](https://github.com/TuragaLab/flybody/blob/d015e9bfe441bd90ae431bac24c55cb74bdbce26/flybody/tasks/flight_imitation.py)
-- [Synthetic trajectories](https://github.com/TuragaLab/flybody/blob/d015e9bfe441bd90ae431bac24c55cb74bdbce26/flybody/tasks/synthetic_trajectories.py)

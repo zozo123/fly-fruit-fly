@@ -1,0 +1,144 @@
+{
+  "schema_version": 5,
+  "task": {
+    "name": "flybody_straight_flight",
+    "speed_cm_s": 20,
+    "initial_height_cm": 1,
+    "reference_duration_s": 0.6,
+    "wing_pattern": "official_fmech"
+  },
+  "controller": "official_flybody_expert",
+  "control_mode": "full",
+  "action_repeat": 1,
+  "policy_interval_s": 0.0002,
+  "checkpoint": null,
+  "wing_pattern_provenance": {
+    "article": "https://api.figshare.com/v2/articles/25309105",
+    "article_version": 4,
+    "file_id": 51196859,
+    "download_url": "https://ndownloader.figshare.com/files/51196859",
+    "sha256": "f97b975ef1b5adbe42c208ea9665f3c37fa432914f56f3943f1697cdb090d1ce",
+    "archive_member": "wing_pattern_fmech.npy",
+    "member_crc32": 3341232839,
+    "verification": "Member CRC32 and SHA256; full archive MD5 not checked (range retrieval)"
+  },
+  "expert_source": "https://janelia.figshare.com/ndownloader/files/44815195",
+  "expert_archive_sha256": "2d9937c9af2baafad1690c1b318791bde417b4d26dd96d4385ab6723d5d58582",
+  "video_slowdown": 10.0,
+  "video_capture_stride": 10,
+  "episodes": [
+    {
+      "seed": 40000,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2704.813307399999,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.026961647395635224,
+      "final_height_cm": 0.987891309198331,
+      "failed": false,
+      "completed_reference": true
+    },
+    {
+      "seed": 40001,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2707.7510817742223,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.02671197393793739,
+      "final_height_cm": 0.9878261731684091,
+      "failed": false,
+      "completed_reference": true
+    },
+    {
+      "seed": 40002,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2704.813307399999,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.026961647395635224,
+      "final_height_cm": 0.987891309198331,
+      "failed": false,
+      "completed_reference": true
+    },
+    {
+      "seed": 40003,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2706.6858654349553,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.026773413713426827,
+      "final_height_cm": 0.9877336405499065,
+      "failed": false,
+      "completed_reference": true
+    },
+    {
+      "seed": 40004,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2703.709691922608,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.027028468371470774,
+      "final_height_cm": 0.9873721371347741,
+      "failed": false,
+      "completed_reference": true
+    },
+    {
+      "seed": 40005,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2703.709691922608,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.027028468371470774,
+      "final_height_cm": 0.9873721371347741,
+      "failed": false,
+      "completed_reference": true
+    },
+    {
+      "seed": 40006,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2703.709691922608,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.027028468371470774,
+      "final_height_cm": 0.9873721371347741,
+      "failed": false,
+      "completed_reference": true
+    },
+    {
+      "seed": 40007,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2707.880595629747,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.026707839333343236,
+      "final_height_cm": 0.9878888709147428,
+      "failed": false,
+      "completed_reference": true
+    },
+    {
+      "seed": 40008,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2707.7543185981817,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.02667948738694806,
+      "final_height_cm": 0.9881665974387928,
+      "failed": false,
+      "completed_reference": true
+    },
+    {
+      "seed": 40009,
+      "steps": 2994,
+      "control_steps": 2994,
+      "return": 2703.709691922608,
+      "duration_s": 0.5987999999999423,
+      "mean_tracking_error_cm": 0.027028468371470774,
+      "final_height_cm": 0.9873721371347741,
+      "failed": false,
+      "completed_reference": true
+    }
+  ],
+  "completion_rate": 1.0,
+  "mean_return": 2705.453724392753,
+  "note": "The official expert is an upstream released controller, not a policy trained by this repository. Completion of this synthetic task is not proof of general flight."
+}

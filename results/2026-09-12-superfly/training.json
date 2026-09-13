@@ -1,0 +1,81 @@
+{
+  "algorithm": "expert_distillation_dagger_then_recurrent_clipped_actor_critic",
+  "connectome": "BANC v888 measured neuron-to-neuron wiring",
+  "graph_file": "banc-v888-superfly.npz",
+  "graph_nodes": 256,
+  "graph_edges": 1949,
+  "shuffled_control": false,
+  "teacher": "official_flybody_expert",
+  "teacher_action_space": "canonical_mean_scaled_to_native_12d_actuator_bounds",
+  "teacher_episodes": 2,
+  "teacher_steps": 5988,
+  "teacher_mean_return": 2704.6962890625,
+  "initial_distillation_losses": [
+    0.005353305422996141,
+    0.0012565531854798258,
+    0.0010347814127323344,
+    0.000579955807380996,
+    0.0006232340524210721,
+    0.0004388365702732252
+  ],
+  "dagger_rounds": [
+    {
+      "round": 1,
+      "beta": 0.8,
+      "corrective": {
+        "episodes": 1,
+        "steps": 2994,
+        "mean_executed_return": 2702.517578125,
+        "completion_rate": 1.0,
+        "mean_student_teacher_l1": 0.011052063741950155
+      },
+      "aggregate_episodes": 3,
+      "aggregate_steps": 8982,
+      "distillation_losses": [
+        0.0004243622101291661,
+        0.0007038552160027985
+      ]
+    },
+    {
+      "round": 2,
+      "beta": 0.4,
+      "corrective": {
+        "episodes": 1,
+        "steps": 2994,
+        "mean_executed_return": 2697.056640625,
+        "completion_rate": 1.0,
+        "mean_student_teacher_l1": 0.035397728751416634
+      },
+      "aggregate_episodes": 4,
+      "aggregate_steps": 11976,
+      "distillation_losses": [
+        0.0006364637337937237,
+        0.0005537559336650666
+      ]
+    },
+    {
+      "round": 3,
+      "beta": 0.0,
+      "corrective": {
+        "episodes": 1,
+        "steps": 507,
+        "mean_executed_return": 223.5122528076172,
+        "completion_rate": 0.0,
+        "mean_student_teacher_l1": 0.1442504215698976
+      },
+      "aggregate_episodes": 5,
+      "aggregate_steps": 12483,
+      "distillation_losses": [
+        0.0019223880605647506,
+        0.0021925611104254405
+      ]
+    }
+  ],
+  "aggregate_episodes": 5,
+  "aggregate_steps": 12483,
+  "rl_steps": 0,
+  "rl_history": [],
+  "wing_pattern": "official_fmech",
+  "wing_pattern_sha256": "f97b975ef1b5adbe42c208ea9665f3c37fa432914f56f3943f1697cdb090d1ce",
+  "seed": 1234
+}

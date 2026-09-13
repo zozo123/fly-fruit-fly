@@ -1,0 +1,141 @@
+{
+  "schema_version": 2,
+  "controller": "superfly_connectome_student",
+  "control_mode": "full",
+  "action_repeat": 1,
+  "policy_interval_s": 0.0002,
+  "task": {
+    "name": "flybody_straight_flight",
+    "speed_cm_s": 20,
+    "initial_height_cm": 1,
+    "reference_duration_s": 0.6,
+    "wing_pattern": "official_fmech"
+  },
+  "wing_pattern_provenance": {
+    "article": "https://api.figshare.com/v2/articles/25309105",
+    "article_version": 4,
+    "file_id": 51196859,
+    "download_url": "https://ndownloader.figshare.com/files/51196859",
+    "sha256": "f97b975ef1b5adbe42c208ea9665f3c37fa432914f56f3943f1697cdb090d1ce",
+    "archive_member": "wing_pattern_fmech.npy",
+    "member_crc32": 3341232839,
+    "verification": "Member CRC32 and SHA256; full archive MD5 not checked (range retrieval)"
+  },
+  "video_slowdown": 10.0,
+  "video_capture_stride": 10,
+  "episodes": [
+    {
+      "seed": 51234,
+      "steps": 392,
+      "control_steps": 392,
+      "return": 150.0797888056638,
+      "duration_s": 0.07839999999999953,
+      "mean_tracking_error_cm": 0.3540306581029211,
+      "final_height_cm": 0.21755175667473417,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 51235,
+      "steps": 459,
+      "control_steps": 459,
+      "return": 206.0835597014855,
+      "duration_s": 0.09179999999999805,
+      "mean_tracking_error_cm": 0.30579444059495214,
+      "final_height_cm": 0.2172059556335273,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 51236,
+      "steps": 392,
+      "control_steps": 392,
+      "return": 150.0797888056638,
+      "duration_s": 0.07839999999999953,
+      "mean_tracking_error_cm": 0.3540306581029211,
+      "final_height_cm": 0.21755175667473417,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 51237,
+      "steps": 409,
+      "control_steps": 409,
+      "return": 172.5698435554191,
+      "duration_s": 0.08179999999999915,
+      "mean_tracking_error_cm": 0.3206503972632189,
+      "final_height_cm": 0.22075272570077487,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 51238,
+      "steps": 395,
+      "control_steps": 395,
+      "return": 154.97136035003462,
+      "duration_s": 0.07899999999999946,
+      "mean_tracking_error_cm": 0.3483057650627956,
+      "final_height_cm": 0.21692813762773572,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 51239,
+      "steps": 454,
+      "control_steps": 454,
+      "return": 201.83349833076005,
+      "duration_s": 0.09079999999999816,
+      "mean_tracking_error_cm": 0.3067004474850526,
+      "final_height_cm": 0.2153814705166303,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 51240,
+      "steps": 409,
+      "control_steps": 409,
+      "return": 172.5698435554191,
+      "duration_s": 0.08179999999999915,
+      "mean_tracking_error_cm": 0.3206503972632189,
+      "final_height_cm": 0.22075272570077487,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 51241,
+      "steps": 415,
+      "control_steps": 415,
+      "return": 171.36065681707376,
+      "duration_s": 0.08299999999999902,
+      "mean_tracking_error_cm": 0.3191984623031688,
+      "final_height_cm": 0.21971479785461986,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 51242,
+      "steps": 440,
+      "control_steps": 440,
+      "return": 193.06512883119584,
+      "duration_s": 0.08799999999999847,
+      "mean_tracking_error_cm": 0.3063884473843638,
+      "final_height_cm": 0.21655379227732585,
+      "failed": true,
+      "completed_reference": false
+    },
+    {
+      "seed": 51243,
+      "steps": 397,
+      "control_steps": 397,
+      "return": 157.37927187834052,
+      "duration_s": 0.07939999999999942,
+      "mean_tracking_error_cm": 0.3451836957515422,
+      "final_height_cm": 0.21474458204092162,
+      "failed": true,
+      "completed_reference": false
+    }
+  ],
+  "completion_rate": 0.0,
+  "mean_return": 172.9992740631056,
+  "note": "Connectome-structured learned controller. BANC supplies measured wiring; sensory mapping, neural dynamics and motor readout are learned engineering components."
+}

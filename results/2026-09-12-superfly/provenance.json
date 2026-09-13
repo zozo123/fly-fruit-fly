@@ -1,0 +1,14 @@
+{
+  "source_commit": "45bbf69a5271b0d88310ee8be51b2b207d93c4a2",
+  "workflow_url": "https://github.com/zozo123/fly-fruit-fly/actions/runs/34721888010",
+  "artifact_id": 10306742322,
+  "artifact_zip_sha256": "7db08d4661f71872fe9f6ee7a5a76e4b852b66601ac10c61ec5c512535ce5a60",
+  "files": {
+    "assessment.json": "1a99f9d6fb469ea19fe443f395eb8bfca4df6624a71a7e48ce99907989d5cc81",
+    "metrics.json": "e5d394bd44c249657d6e55a793010c506a3e0eabc2122606ac55ed34cbfd87c7",
+    "training.json": "0467233e33370f2dc36b6dd8204a24794acc227ea2587c99ccad027c0b08166b",
+    "banc-v888-superfly.npz": "2b44c80b7db245b39bfada98e8c0168d6ebbcd355bba188ea743c2db4757cec2",
+    "superfly.pt": "252d4048cba735b7617884bc86a16bfca6dab71426e5d5a94d2b0acae38ffe92"
+  },
+  "note": "Raw observed outputs from the recorded source commit. Subsequent training fixes do not change these historical measurements."
+}
