@@ -20,6 +20,10 @@ from .curriculum import collect_corrective_rollouts, _rollout_summary
 from .superfly import _make_env, collect_teacher_rollouts, evaluate
 
 
+GATE_DURATION_S = 0.59
+GATE_MAX_ERROR_CM = 0.1
+
+
 @torch.no_grad()
 def readout_dataset(policy, rollouts):
     """Replay rollouts and expose only the states CAPE permits to drive motors."""
@@ -59,18 +63,36 @@ def fit_readout(policy, x, y, ridge):
     return float(torch.mean((torch.tanh(x @ solution) - torch.tanh(y)) ** 2))
 
 
+def _episode_gate_progress(episode: dict) -> float:
+    """Continuous progress toward satisfying both flight-gate bottlenecks.
+
+    A controller cannot compensate for poor tracking merely by surviving longer,
+    or vice versa. The minimum normalized margin therefore measures the limiting
+    criterion and is clipped at one once both numeric thresholds are satisfied.
+    """
+    duration = max(0.0, float(episode["duration_s"]))
+    error = max(0.0, float(episode["mean_tracking_error_cm"]))
+    duration_progress = duration / GATE_DURATION_S
+    error_progress = 1.0 if error == 0.0 else GATE_MAX_ERROR_CM / error
+    return float(min(1.0, duration_progress, error_progress))
+
+
 def validation_score(metrics):
     episodes = metrics["episodes"]
+    if not episodes:
+        raise ValueError("validation requires at least one episode")
     passing = sum(
         e["completed_reference"]
-        and e["duration_s"] >= 0.59
-        and e["mean_tracking_error_cm"] <= 0.1
+        and e["duration_s"] >= GATE_DURATION_S
+        and e["mean_tracking_error_cm"] <= GATE_MAX_ERROR_CM
         for e in episodes
     )
+    progress = float(np.mean([_episode_gate_progress(e) for e in episodes]))
     return (
         passing,
-        float(np.mean([e["duration_s"] for e in episodes])),
+        progress,
         -float(np.mean([e["mean_tracking_error_cm"] for e in episodes])),
+        float(np.mean([e["duration_s"] for e in episodes])),
     )
 
 
@@ -146,13 +168,45 @@ def evaluate_seed_panel(policy, seeds, *, output: Path, video: bool, asset_cache
     return metrics
 
 
-def teacher_mix_beta(round_index: int, *, start: float = 0.8, floor: float = 0.15) -> float:
-    """Anneal teacher control without dropping abruptly onto a collapsed student."""
+def teacher_mix_beta(
+    round_index: int,
+    *,
+    previous_summary: dict | None = None,
+    start: float = 0.8,
+    floor: float = 0.15,
+    decay: float = 0.72,
+    divergence_limit: float = 0.05,
+) -> float:
+    """Anneal teacher control, but freeze or recover support if the student destabilizes."""
     if round_index < 0:
         raise ValueError("round_index must be non-negative")
+    if not (0.0 < decay < 1.0):
+        raise ValueError("teacher-mix decay must be in (0, 1)")
     if not (0.0 <= floor <= start <= 1.0):
         raise ValueError("teacher mixing must satisfy 0 <= floor <= start <= 1")
-    return float(max(floor, start * (0.72 ** round_index)))
+    if divergence_limit <= 0:
+        raise ValueError("divergence_limit must be positive")
+
+    scheduled = float(max(floor, start * (decay ** round_index)))
+    if previous_summary is None:
+        return scheduled
+
+    previous_beta = float(previous_summary["beta"])
+    completion = float(previous_summary["completion_rate"])
+    divergence = float(previous_summary["mean_student_teacher_l1"])
+    if not (0.0 <= previous_beta <= 1.0 and 0.0 <= completion <= 1.0):
+        raise ValueError("invalid previous corrective-rollout summary")
+    if divergence < 0 or not np.isfinite(divergence):
+        raise ValueError("invalid student/teacher divergence")
+
+    # A failed corrective rollout means the scheduled anneal was too aggressive:
+    # step one schedule level back toward the teacher. Rising divergence without an
+    # outright failure freezes support instead of continuing to remove supervision.
+    if completion < 1.0:
+        return float(min(start, max(scheduled, previous_beta / decay)))
+    if divergence > divergence_limit:
+        return float(max(scheduled, previous_beta))
+    return scheduled
 
 
 def main():
@@ -219,7 +273,12 @@ def main():
         "initial_losses": losses,
         "normalization": "fixed after initial expert demonstrations",
         "transient_weighting": {"steps": 400, "initial_boost": 4.0},
-        "teacher_mix_schedule": "max(0.15, 0.8 * 0.72**round)",
+        "teacher_mix_schedule": {
+            "base": "max(0.15, 0.8 * 0.72**round)",
+            "divergence_freeze_l1": 0.05,
+            "failure_recovery": "raise one schedule level toward teacher",
+        },
+        "selection_objective": "passing episodes, then mean bottleneck progress toward duration+tracking gate",
         "validation_protocol": protocol,
         "confirmation_policy": "evaluate only after development gate passes",
         "expert_actions_at_evaluation": False,
@@ -288,7 +347,8 @@ def main():
         if best_score[0] == len(protocol["round_promotion_seeds"]) or round_index == args.rounds:
             break
 
-        beta = teacher_mix_beta(round_index)
+        previous_summary = manifest["corrective_rounds"][-1] if manifest["corrective_rounds"] else None
+        beta = teacher_mix_beta(round_index, previous_summary=previous_summary)
         corrective, _ = collect_corrective_rollouts(
             policy,
             episodes=2,
