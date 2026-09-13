@@ -4,7 +4,7 @@ import torch
 
 from fly_fruit_fly.connectome import ConnectomeGraph
 from fly_fruit_fly.superfly import SuperFlyPolicy, distill
-from fly_fruit_fly.flight_training import fit_readout, validation_score
+from fly_fruit_fly.flight_training import fit_readout, validation_protocol, validation_score
 
 
 def policy():
@@ -42,3 +42,16 @@ def test_validation_prioritizes_real_completion_over_reward():
         return {'episodes':[{'completed_reference':completed,'duration_s':duration,
                              'mean_tracking_error_cm':error}]}
     assert validation_score(report(True,.5988,.09)) > validation_score(report(False,.58,.01))
+
+
+def test_validation_protocol_keeps_tuning_promotion_and_test_seeds_disjoint():
+    protocol = validation_protocol()
+    tuning = set(protocol['ridge_selection_seeds'])
+    promotion = set(protocol['round_promotion_seeds'])
+    held_out = set(protocol['held_out_test_seeds'])
+    assert len(tuning) == 3
+    assert len(promotion) == 3
+    assert len(held_out) == 10
+    assert tuning.isdisjoint(promotion)
+    assert tuning.isdisjoint(held_out)
+    assert promotion.isdisjoint(held_out)
