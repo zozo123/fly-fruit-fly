@@ -5,8 +5,10 @@ import torch
 from fly_fruit_fly.connectome import ConnectomeGraph
 from fly_fruit_fly.superfly import SuperFlyPolicy, distill
 from fly_fruit_fly.flight_training import (
+    _episode_gate_progress,
     _validate_seed_panel,
     fit_readout,
+    teacher_mix_beta,
     validate_validation_protocol,
     validation_protocol,
     validation_score,
@@ -48,6 +50,48 @@ def test_validation_prioritizes_real_completion_over_reward():
         return {'episodes':[{'completed_reference':completed,'duration_s':duration,
                              'mean_tracking_error_cm':error}]}
     assert validation_score(report(True,.5988,.09)) > validation_score(report(False,.58,.01))
+
+
+def test_gate_progress_uses_limiting_duration_or_tracking_margin():
+    duration_limited = {
+        'completed_reference': False,
+        'duration_s': .295,
+        'mean_tracking_error_cm': .05,
+    }
+    error_limited = {
+        'completed_reference': False,
+        'duration_s': .59,
+        'mean_tracking_error_cm': .2,
+    }
+    assert _episode_gate_progress(duration_limited) == pytest.approx(.5)
+    assert _episode_gate_progress(error_limited) == pytest.approx(.5)
+
+
+def test_validation_does_not_trade_large_tracking_error_for_duration():
+    def report(duration, error):
+        return {'episodes':[{'completed_reference':False,'duration_s':duration,
+                             'mean_tracking_error_cm':error}]}
+    balanced = report(.20, .20)
+    long_but_bad = report(.30, .50)
+    assert validation_score(balanced) > validation_score(long_but_bad)
+
+
+def test_teacher_mix_freezes_when_student_teacher_divergence_rises():
+    previous = {
+        'beta': .2985984,
+        'completion_rate': 1.0,
+        'mean_student_teacher_l1': .074,
+    }
+    assert teacher_mix_beta(4, previous_summary=previous) == pytest.approx(.2985984)
+
+
+def test_teacher_mix_recovers_after_corrective_rollout_collapse():
+    previous = {
+        'beta': .214990848,
+        'completion_rate': 0.0,
+        'mean_student_teacher_l1': .108,
+    }
+    assert teacher_mix_beta(5, previous_summary=previous) == pytest.approx(.2985984)
 
 
 def test_validation_protocol_keeps_all_seed_domains_disjoint():
