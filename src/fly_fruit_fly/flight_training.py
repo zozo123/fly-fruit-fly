@@ -76,11 +76,67 @@ def validation_score(metrics):
 
 def validation_protocol() -> dict:
     """Keep readout tuning, round promotion, and final testing on disjoint seeds."""
-    return {
+    protocol = {
         "ridge_selection_seeds": [30000, 30001, 30002],
         "round_promotion_seeds": [31000, 31001, 31002],
         "held_out_test_seeds": list(range(70000, 70010)),
     }
+    validate_validation_protocol(protocol)
+    return protocol
+
+
+def _validate_seed_panel(name: str, seeds) -> list[int]:
+    """Validate the exact seed panel semantics supported by evaluate(seed, episodes)."""
+    if not isinstance(seeds, (list, tuple)) or not seeds:
+        raise ValueError(f"{name} must be a non-empty seed sequence")
+    if any(type(seed) is not int or seed < 0 for seed in seeds):
+        raise ValueError(f"{name} must contain non-negative integer seeds")
+    normalized = list(seeds)
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{name} contains duplicate seeds")
+    expected = list(range(normalized[0], normalized[0] + len(normalized)))
+    if normalized != expected:
+        raise ValueError(
+            f"{name} must be consecutive because evaluate() expands seed + episode index"
+        )
+    return normalized
+
+
+def validate_validation_protocol(protocol: dict) -> dict:
+    """Reject overlapping or ambiguous tuning/promotion/test seed definitions."""
+    required = (
+        "ridge_selection_seeds",
+        "round_promotion_seeds",
+        "held_out_test_seeds",
+    )
+    if not isinstance(protocol, dict) or set(protocol) != set(required):
+        raise ValueError("validation protocol must define exactly tuning, promotion, and test panels")
+    panels = {name: _validate_seed_panel(name, protocol[name]) for name in required}
+    names = list(required)
+    for i, first in enumerate(names):
+        for second in names[i + 1 :]:
+            if set(panels[first]).intersection(panels[second]):
+                raise ValueError(f"validation seed panels overlap: {first} and {second}")
+    return panels
+
+
+def evaluate_seed_panel(policy, seeds, *, output: Path, video: bool, asset_cache: Path):
+    """Evaluate exactly one validated consecutive seed panel."""
+    panel = _validate_seed_panel("evaluation_seeds", seeds)
+    metrics = evaluate(
+        policy,
+        episodes=len(panel),
+        seed=panel[0],
+        output=output,
+        video=video,
+        asset_cache=asset_cache,
+    )
+    observed = [episode.get("seed") for episode in metrics.get("episodes", [])]
+    if observed != panel:
+        raise RuntimeError(
+            f"evaluation returned unexpected seeds: expected {panel}, observed {observed}"
+        )
+    return metrics
 
 
 def teacher_mix_beta(round_index: int, *, start: float = 0.8, floor: float = 0.15) -> float:
@@ -112,9 +168,6 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
 
     protocol = validation_protocol()
-    ridge_seed = protocol["ridge_selection_seeds"][0]
-    promotion_seed = protocol["round_promotion_seeds"][0]
-    validation_episodes = len(protocol["ridge_selection_seeds"])
 
     torch.manual_seed(args.seed)
     graph = materialize_cape_subgraph(
@@ -179,10 +232,9 @@ def main():
             policy.load_state_dict(round_state)
             loss = fit_readout(policy, x, y, ridge) if ridge else None
             label = f"round-{round_index:02d}-ridge-{ridge}"
-            metrics = evaluate(
+            metrics = evaluate_seed_panel(
                 policy,
-                episodes=validation_episodes,
-                seed=ridge_seed,
+                protocol["ridge_selection_seeds"],
                 output=args.output / "validation" / "ridge-selection" / label,
                 video=False,
                 asset_cache=args.cache,
@@ -201,14 +253,10 @@ def main():
                 round_best = copy.deepcopy(policy.state_dict())
                 round_label = label
 
-        # Ridge tuning and round-to-round promotion use disjoint simulator seeds.
-        # This keeps repeated readout comparisons from directly choosing the final
-        # checkpoint on the same tiny validation panel.
         policy.load_state_dict(round_best)
-        promotion_metrics = evaluate(
+        promotion_metrics = evaluate_seed_panel(
             policy,
-            episodes=len(protocol["round_promotion_seeds"]),
-            seed=promotion_seed,
+            protocol["round_promotion_seeds"],
             output=args.output / "validation" / "round-promotion" / f"round-{round_index:02d}",
             video=False,
             asset_cache=args.cache,
@@ -246,9 +294,6 @@ def main():
             "beta": beta,
             **_rollout_summary(corrective),
         }
-        # The previous trainer only refit its motor readout after DAgger. CAPE also
-        # updates perception, recurrent dynamics and source gains on aggregated
-        # expert labels while keeping observation normalization fixed.
         corrective_summary["recurrent_distillation_losses"] = cape_distill(
             policy,
             aggregate,
@@ -265,10 +310,9 @@ def main():
 
     policy.load_state_dict(best_state)
     save_cape_checkpoint(policy, graph, args.output / "student.pt", manifest)
-    metrics = evaluate(
+    metrics = evaluate_seed_panel(
         policy,
-        episodes=len(protocol["held_out_test_seeds"]),
-        seed=protocol["held_out_test_seeds"][0],
+        protocol["held_out_test_seeds"],
         output=args.output / "evaluation",
         video=True,
         asset_cache=args.cache,
