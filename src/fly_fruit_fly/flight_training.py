@@ -22,6 +22,7 @@ from .superfly import _make_env, collect_teacher_rollouts, evaluate, ppo_finetun
 
 GATE_DURATION_S = 0.59
 GATE_MAX_ERROR_CM = 0.1
+RL_TRAIN_SEED_NAMESPACE = 100_000
 
 
 @torch.no_grad()
@@ -64,7 +65,7 @@ def fit_readout(policy, x, y, ridge):
 
 
 def _episode_gate_progress(episode: dict) -> float:
-    """Continuous progress toward satisfying both flight-gate bottlenecks."""
+    """Return continuous progress toward satisfying both flight-gate bottlenecks."""
     duration = max(0.0, float(episode["duration_s"]))
     error = max(0.0, float(episode["mean_tracking_error_cm"]))
     duration_progress = duration / GATE_DURATION_S
@@ -73,6 +74,7 @@ def _episode_gate_progress(episode: dict) -> float:
 
 
 def validation_score(metrics):
+    """Rank controllers by passes, then balanced gate progress, error, and duration."""
     episodes = metrics["episodes"]
     if not episodes:
         raise ValueError("validation requires at least one episode")
@@ -92,7 +94,7 @@ def validation_score(metrics):
 
 
 def validation_protocol() -> dict:
-    """Keep tuning, promotion, development, and confirmation seeds disjoint."""
+    """Return disjoint tuning, promotion, development, and confirmation panels."""
     protocol = {
         "ridge_selection_seeds": [30000, 30001, 30002],
         "round_promotion_seeds": [31000, 31001, 31002],
@@ -104,6 +106,7 @@ def validation_protocol() -> dict:
 
 
 def _validate_seed_panel(name: str, seeds) -> list[int]:
+    """Validate one consecutive panel matching ``evaluate(seed, episodes)`` semantics."""
     if not isinstance(seeds, (list, tuple)) or not seeds:
         raise ValueError(f"{name} must be a non-empty seed sequence")
     if any(type(seed) is not int or seed < 0 for seed in seeds):
@@ -120,6 +123,7 @@ def _validate_seed_panel(name: str, seeds) -> list[int]:
 
 
 def validate_validation_protocol(protocol: dict) -> dict:
+    """Validate all evaluation panels and reject cross-panel seed leakage."""
     required = (
         "ridge_selection_seeds",
         "round_promotion_seeds",
@@ -139,7 +143,20 @@ def validate_validation_protocol(protocol: dict) -> dict:
     return panels
 
 
+def rl_training_seed(base_seed: int, protocol: dict) -> int:
+    """Derive one deterministic PPO-only seed and prove it is not an evaluation seed."""
+    if type(base_seed) is not int or base_seed < 0:
+        raise ValueError("base training seed must be a non-negative integer")
+    panels = validate_validation_protocol(protocol)
+    seed = RL_TRAIN_SEED_NAMESPACE + base_seed
+    reserved = {value for panel in panels.values() for value in panel}
+    if seed in reserved:
+        raise ValueError("RL training seed overlaps an evaluation seed panel")
+    return seed
+
+
 def evaluate_seed_panel(policy, seeds, *, output: Path, video: bool, asset_cache: Path):
+    """Evaluate exactly one named seed panel and verify the simulator used every seed."""
     panel = _validate_seed_panel("evaluation_seeds", seeds)
     metrics = evaluate(
         policy,
@@ -193,6 +210,7 @@ def teacher_mix_beta(
 
 
 def main():
+    """Run staged CAPE imitation, DAgger, guarded RL, and out-of-sample evaluation."""
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, default=Path("runs/flight-student"))
     p.add_argument("--cache", type=Path, default=Path.home() / ".cache" / "fly-fruit-fly")
@@ -210,11 +228,14 @@ def main():
         p.error("circuit-substeps must be between 1 and 16")
     if args.rl_steps < 0:
         p.error("rl-steps must be non-negative")
+    if args.seed < 0:
+        p.error("seed must be non-negative")
     if args.output.exists() and any(args.output.iterdir()):
         p.error("output directory must be empty")
     args.output.mkdir(parents=True, exist_ok=True)
 
     protocol = validation_protocol()
+    rl_seed = rl_training_seed(args.seed, protocol)
     torch.manual_seed(args.seed)
     graph = materialize_cape_subgraph(
         args.cache,
@@ -249,6 +270,7 @@ def main():
     manifest = {
         "algorithm": "cape_role_routed_distillation_adaptive_dagger_ridge_then_guarded_ppo",
         "seed": args.seed,
+        "rl_training_seed": rl_seed,
         "graph_nodes": graph.n_nodes,
         "graph_edges": graph.n_edges,
         "graph_kind": graph.metadata.get("kind"),
@@ -369,7 +391,7 @@ def main():
         manifest["rl_history"] = ppo_finetune(
             policy,
             total_steps=args.rl_steps,
-            seed=args.seed + 30_000,
+            seed=rl_seed,
             asset_cache=args.cache,
             learning_rate=5e-5,
             rollout_steps=512,
@@ -387,6 +409,7 @@ def main():
         accepted = rl_score > best_score
         manifest["rl_promotion"] = {
             "steps": args.rl_steps,
+            "training_seed": rl_seed,
             "score": rl_score,
             "pre_rl_score": best_score,
             "accepted": accepted,
