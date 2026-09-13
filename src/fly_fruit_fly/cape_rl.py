@@ -252,12 +252,12 @@ def anchored_ppo_finetune(
                     "episodes_ended": int(dones.sum()),
                     "loss": float(np.mean(losses)) if losses else None,
                     "mean_anchor_kl": float(np.mean(kls)) if kls else 0.0,
-                    "max_anchor_kl": float(np.max(kls)) if kls else 0.0,
+                    "max_observed_anchor_kl": float(np.max(kls)) if kls else 0.0,
                     "rejected_update_kl": rejected_update_kl,
                     "stopped_for_kl": stopped_for_kl,
                     "exploration_std": exploration_std,
                     "target_kl": target_kl,
-                    "max_anchor_kl": max_anchor_kl,
+                    "max_allowed_anchor_kl": max_anchor_kl,
                     "kl_coef": kl_coef,
                 }
             )
